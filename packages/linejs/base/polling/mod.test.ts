@@ -45,6 +45,28 @@ Deno.test("_listenTalkEvents sleeps between polls and honors abort", async () =>
 	assert(elapsed >= 100, `loop ended too early (${elapsed}ms)`);
 });
 
+Deno.test("_listenTalkEvents abort interrupts a long polling delay", async () => {
+	const client = {
+		talk: { sync: () => Promise.resolve({}) },
+		log() {},
+	};
+	const polling = new Polling(client as never);
+	const controller = new AbortController();
+	const iterator = polling._listenTalkEvents({
+		signal: controller.signal,
+		pollingInterval: 1000,
+	});
+	const pending = iterator.next();
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	const start = performance.now();
+	controller.abort();
+	await pending;
+	assert(
+		performance.now() - start < 250,
+		"abort should wake the polling delay",
+	);
+});
+
 Deno.test("failed pusher initialization resets listening state for retry", async () => {
 	const failure = new Error("connection failed");
 	const base = new BaseClient({ device: "IOSIPAD" });

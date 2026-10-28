@@ -72,7 +72,7 @@ export class Polling {
 					onError(error);
 				}
 			}
-			await sleep(pollingInterval);
+			await sleep(pollingInterval, signal);
 			if (signal?.aborted) {
 				break;
 			}
@@ -149,7 +149,7 @@ export class Polling {
 					onError(error);
 				}
 			}
-			await sleep(pollingInterval);
+			await sleep(pollingInterval, signal);
 			if (signal?.aborted) {
 				break;
 			}
