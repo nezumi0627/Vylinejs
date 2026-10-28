@@ -144,7 +144,9 @@ export interface VoomClient {
 		opts: Omit<VoomRestOptions, "channelToken">,
 	): Promise<VoomRestResponse<T>>;
 	/** GET /mh/api/v57/post/list.json — VOOM feed. Live-verified (#151). */
-	feed(opts?: { postLimit?: number; followingMaxPage?: number }): Promise<VoomRestResponse>;
+	feed(
+		opts?: { postLimit?: number; followingMaxPage?: number },
+	): Promise<VoomRestResponse>;
 	/** GET /tl/api/v57/timeline/tab/status.json. Live-verified. */
 	timelineStatus(): Promise<VoomRestResponse>;
 }
@@ -152,16 +154,36 @@ export interface VoomClient {
 class ClientVoom implements VoomClient {
 	#client: Client;
 	#tokenCache = new Map<string, string>();
+	#tokenRequests = new Map<string, Promise<string>>();
+	#cacheMid?: string;
 	constructor(client: Client) {
 		this.#client = client;
 	}
 	async getToken(channel: keyof typeof VoomChannelId): Promise<string> {
-		let t = this.#tokenCache.get(channel);
-		if (!t) {
-			t = await getChannelToken(this.#client, VoomChannelId[channel]);
-			this.#tokenCache.set(channel, t);
+		const mid = this.#client.base.profile?.mid;
+		if (this.#cacheMid !== mid) {
+			this.#tokenCache.clear();
+			this.#cacheMid = mid;
 		}
-		return t;
+		const cached = this.#tokenCache.get(channel);
+		if (cached) return cached;
+		const requestKey = JSON.stringify([mid, channel]);
+		const existing = this.#tokenRequests.get(requestKey);
+		if (existing) return await existing;
+
+		const request = getChannelToken(this.#client, VoomChannelId[channel]);
+		this.#tokenRequests.set(requestKey, request);
+		try {
+			const token = await request;
+			if (this.#client.base.profile?.mid === mid) {
+				this.#tokenCache.set(channel, token);
+			}
+			return token;
+		} finally {
+			if (this.#tokenRequests.get(requestKey) === request) {
+				this.#tokenRequests.delete(requestKey);
+			}
+		}
 	}
 	async call<T = unknown>(
 		channel: keyof typeof VoomChannelId,
