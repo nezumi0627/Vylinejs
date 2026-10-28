@@ -1447,17 +1447,19 @@ export class PlanetTransport implements CallTransport {
 
 	#onWire(wire: Uint8Array, source?: { host: string; port: number }) {
 		try {
-			this.#debug({
-				type: "recv",
-				bytes: wire.length,
-				rtpLike: isRtpLike(wire),
-				sourceFamily: source?.host.includes(":")
-					? "ipv6"
-					: source
-					? "ipv4"
-					: "",
-				sourcePort: source?.port,
-			});
+			if (this.#opts.debug) {
+				this.#debug({
+					type: "recv",
+					bytes: wire.length,
+					rtpLike: isRtpLike(wire),
+					sourceFamily: source?.host.includes(":")
+						? "ipv6"
+						: source
+						? "ipv4"
+						: "",
+					sourcePort: source?.port,
+				});
+			}
 			if (this.#endReason && isRtpLike(wire)) return;
 			if (this.#srtpRecv && isRtpLike(wire)) {
 				if (
@@ -1509,17 +1511,19 @@ export class PlanetTransport implements CallTransport {
 					}
 					return;
 				}
-				this.#debug({
-					type: "rtp_recv",
-					bytes: wire.length,
-					payloadType: wire[1] & 0x7f,
-					marker: (wire[1] & 0x80) !== 0,
-					seq: wire.length >= 4 ? ((wire[2] << 8) | wire[3]) : undefined,
-					ssrc: wire.length >= 12
-						? (((wire[8] << 24) | (wire[9] << 16) | (wire[10] << 8) |
-							wire[11]) >>> 0)
-						: undefined,
-				});
+				if (this.#opts.debug) {
+					this.#debug({
+						type: "rtp_recv",
+						bytes: wire.length,
+						payloadType: wire[1] & 0x7f,
+						marker: (wire[1] & 0x80) !== 0,
+						seq: wire.length >= 4 ? ((wire[2] << 8) | wire[3]) : undefined,
+						ssrc: wire.length >= 12
+							? (((wire[8] << 24) | (wire[9] << 16) | (wire[10] << 8) |
+								wire[11]) >>> 0)
+							: undefined,
+					});
+				}
 				this.#updateRtpEndpointFromSource(source);
 				this.#enqueueRtp(wire);
 				return;
@@ -3863,15 +3867,17 @@ export class PlanetTransport implements CallTransport {
 				const decrypted = await this.#decryptMediaRtp(wire);
 				if (this.#endReason) return;
 				const parsed = parseRtp(decrypted.rtp);
-				this.#debug({
-					type: "media_recv",
-					bytes: wire.length,
-					payloadBytes: parsed.payload.length,
-					payloadType: parsed.payloadType,
-					ssrc: parsed.ssrc,
-					mediaKeyMode: decrypted.mode,
-					mediaKeySwitched: decrypted.switched,
-				});
+				if (this.#opts.debug) {
+					this.#debug({
+						type: "media_recv",
+						bytes: wire.length,
+						payloadBytes: parsed.payload.length,
+						payloadType: parsed.payloadType,
+						ssrc: parsed.ssrc,
+						mediaKeyMode: decrypted.mode,
+						mediaKeySwitched: decrypted.switched,
+					});
+				}
 				yield parsed.payload;
 			} catch (e) {
 				this.#debug({
@@ -3905,16 +3911,18 @@ export class PlanetTransport implements CallTransport {
 						? depacketizeEas2(audio.payload)
 						: [audio.payload];
 					if (frames.length === 0) continue;
-					this.#debug({
-						type: "media_recv",
-						bytes: wire.length,
-						payloadBytes: audio.payload.length,
-						payloadType: audio.payloadType,
-						ssrc: audio.ssrc,
-						mediaKeyMode: decrypted.mode,
-						mediaKeySwitched: decrypted.switched,
-						audioFrames: frames.length,
-					});
+					if (this.#opts.debug) {
+						this.#debug({
+							type: "media_recv",
+							bytes: wire.length,
+							payloadBytes: audio.payload.length,
+							payloadType: audio.payloadType,
+							ssrc: audio.ssrc,
+							mediaKeyMode: decrypted.mode,
+							mediaKeySwitched: decrypted.switched,
+							audioFrames: frames.length,
+						});
+					}
 					yield { ssrc: audio.ssrc, timestamp: audio.timestamp, frames };
 				}
 			} catch (e) {
@@ -4208,11 +4216,13 @@ export class PlanetTransport implements CallTransport {
 		this.#updateRtpEndpointFromSource(source);
 		const frame = this.#videoAssembler.push(packet);
 		if (!frame) return;
-		this.#debug({
-			type: "video_recv",
-			bytes: frame.data.length,
-			key: frame.key,
-		});
+		if (this.#opts.debug) {
+			this.#debug({
+				type: "video_recv",
+				bytes: frame.data.length,
+				key: frame.key,
+			});
+		}
 		const waiter = this.#videoWaiters.shift();
 		if (waiter) waiter(frame);
 		else {
