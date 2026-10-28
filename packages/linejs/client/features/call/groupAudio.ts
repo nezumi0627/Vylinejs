@@ -14,6 +14,16 @@ interface Source {
 	chunks: Array<{ at: number; samples: Int16Array }>;
 }
 
+function pruneChunks(source: Source, after: number): void {
+	let retained = 0;
+	for (const chunk of source.chunks) {
+		if (chunk.at + chunk.samples.length > after) {
+			source.chunks[retained++] = chunk;
+		}
+	}
+	source.chunks.length = retained;
+}
+
 /** Bounded 48kHz mono playout, 60ms initial jitter cushion, 30 sources max.
  * ponytail: late/reordered encoded packets are dropped, not re-decoded;
  * add an encoded jitter buffer/PLC if measured network loss warrants it.
@@ -61,16 +71,20 @@ export class GroupAudioMixer {
 			source.chunks = [];
 		}
 		try {
-			const frames = packet.frames.map((data) => source!.decoder.decode(data));
-			if (
-				frames.some((frame) =>
+			const frames: PcmFrame[] = [];
+			let length = 0;
+			for (const data of packet.frames) {
+				const frame = source.decoder.decode(data);
+				if (
 					!frame || frame.sampleRate !== 48000 || frame.channels !== 1
-				)
-			) {
-				throw new Error("Unsupported group PCM");
+				) {
+					throw new Error("Unsupported group PCM");
+				}
+				length += frame.samples.length;
+				if (length > 5760) throw new Error("Group PCM duration exceeds 120ms");
+				frames.push(frame);
 			}
-			const length = frames.reduce((n, frame) => n + frame!.samples.length, 0);
-			if (length < 1 || length > 5760) {
+			if (length < 1) {
 				throw new Error("Group PCM duration exceeds 120ms");
 			}
 			const samples = new Int16Array(length);
@@ -82,9 +96,7 @@ export class GroupAudioMixer {
 			source.timestamp = packet.timestamp;
 			source.at = at;
 			source.seenAt = now;
-			source.chunks = source.chunks.filter((chunk) =>
-				chunk.at + chunk.samples.length > nowSample
-			);
+			pruneChunks(source, nowSample);
 			if (source.chunks.length >= 10) source.chunks.shift();
 			source.chunks.push({ at, samples });
 		} catch {
@@ -114,9 +126,7 @@ export class GroupAudioMixer {
 					mixed[i - at] += chunk.samples[i - chunk.at];
 				}
 			}
-			source.chunks = source.chunks.filter((chunk) =>
-				chunk.at + chunk.samples.length > end
-			);
+			pruneChunks(source, end);
 		}
 		if (!hasAudio) return;
 		return {
