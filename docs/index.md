@@ -5,7 +5,7 @@ layout: home
 hero:
   image: /favicon.png
   name: "Vylinejs Documentation"
-  tagline: A LINEJS-based TypeScript client with portable protocol work from Vyline.
+  tagline: LINEJS-compatible by design, independently maintained for faster updates, flexible features, and measured performance improvements.
   actions:
     - theme: brand
       text: See Docs
@@ -21,10 +21,13 @@ features:
   - title: Works on All Platforms
     icon: 🌎
     details: Node.js, Deno, Bun, and more.
-  - title: Highly Typed
+  - title: Familiar LINEJS API
     icon: 🧩
-    details: Enhanced TypeScript support.
-  - title: Safety Locked
-    icon: 🔒
-    details: Defaults to safety locked (RateLimit and others).
+    details: Keep the usage patterns you already know while adding fork-specific capabilities.
+  - title: Fast, Flexible Maintenance
+    icon: ⚡
+    details: Respond directly to new protocol changes and user requests, with frequent updates.
+  - title: Measured Performance Work
+    icon: 🚀
+    details: Profile hot paths and remove demonstrated CPU and memory bottlenecks.
 ---
