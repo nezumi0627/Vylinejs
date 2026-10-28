@@ -64,6 +64,68 @@ Deno.test("tryRefreshToken keeps the stored refreshToken when not rotated", asyn
 	stub.end();
 });
 
+Deno.test("a late refresh cannot overwrite credentials from a newer login", async () => {
+	const store = new Map<string, string | number>([["refreshToken", "rt-old"]]);
+	let releaseRefreshWrite!: () => void;
+	let refreshWriteStarted!: () => void;
+	const refreshWrite = new Promise<void>((resolve) =>
+		releaseRefreshWrite = resolve
+	);
+	const started = new Promise<void>((resolve) => refreshWriteStarted = resolve);
+	let onEnd = () => {};
+	const client = {
+		authToken: "access-old",
+		disabled: false,
+		on(_event: string, callback: () => void) {
+			onEnd = callback;
+		},
+		emit() {},
+		storage: {
+			get(k: string) {
+				return Promise.resolve(store.get(k) ?? null);
+			},
+			async set(k: string, v: string | number) {
+				if (k === "refreshToken" && v === "rt-rotated") {
+					refreshWriteStarted();
+					await refreshWrite;
+				}
+				store.set(k, v);
+			},
+			delete(k: string) {
+				store.delete(k);
+				return Promise.resolve();
+			},
+		},
+		request: {
+			request() {
+				return Promise.resolve({
+					accessToken: "access-stale",
+					refreshToken: "rt-rotated",
+					tokenIssueTimeEpochSec: 1000,
+					durationUntilRefreshInSec: 3600,
+				});
+			},
+		},
+	};
+	const auth = new AuthService(client as never);
+	const refresh = auth.tryRefreshToken();
+	await started;
+	const save = auth.saveAuthTokenCredential({
+		accessToken: "access-new",
+		refreshToken: "rt-new",
+		expire: 9000,
+	});
+	releaseRefreshWrite();
+	const [refreshResult, saveResult] = await Promise.allSettled([refresh, save]);
+	assertEquals(refreshResult.status, "rejected");
+	assertEquals(saveResult.status, "fulfilled");
+	assertEquals(store.get("accessToken"), "access-new");
+	assertEquals(store.get("refreshToken"), "rt-new");
+	assertEquals(store.get("expire"), 9000);
+	assertEquals(client.authToken, "access-new");
+	onEnd();
+});
+
 Deno.test("refresh scheduling backs off when credential storage keeps failing", async () => {
 	let reads = 0;
 	let onEnd = () => {};

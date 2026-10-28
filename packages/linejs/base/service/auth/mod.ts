@@ -17,6 +17,7 @@ export class AuthService implements BaseService {
 	private refreshInflight: Promise<void> | null = null;
 	private refreshGeneration = 0;
 	private credentialGeneration = 0;
+	private credentialWriteLock: Promise<void> = Promise.resolve();
 	private refreshTimer?: ReturnType<typeof setTimeout>;
 	private refreshScheduleGeneration = 0;
 	private static readonly REFRESH_LEAD_SECONDS = 60;
@@ -81,34 +82,44 @@ export class AuthService implements BaseService {
 	private async refreshWithToken(refreshToken: string): Promise<void> {
 		const credentialGeneration = this.credentialGeneration;
 		const result = await this.refresh({ request: { refreshToken } });
-		if (credentialGeneration !== this.credentialGeneration) {
-			throw new InternalError(
-				"SessionChanged",
-				"credentials changed while refreshing",
-			);
-		}
 		if (!result.accessToken) {
 			throw new InternalError(
 				"RefreshError",
 				"refresh response has no access token",
 			);
 		}
-		if (result.refreshToken) {
-			await this.client.storage.set("refreshToken", result.refreshToken);
-		}
 		const expire = Number(result.tokenIssueTimeEpochSec) +
 			Number(result.durationUntilRefreshInSec);
-		if (Number.isFinite(expire)) {
-			await this.client.storage.set("expire", expire);
-		} else await this.client.storage.delete("expire");
-		await this.setAccessToken(result.accessToken);
-		this.refreshGeneration++;
+		await this.withCredentialWriteLock(async () => {
+			this.assertCredentialGeneration(credentialGeneration);
+			if (result.refreshToken) {
+				await this.client.storage.set("refreshToken", result.refreshToken);
+				this.assertCredentialGeneration(credentialGeneration);
+			}
+			if (Number.isFinite(expire)) {
+				await this.client.storage.set("expire", expire);
+			} else await this.client.storage.delete("expire");
+			this.assertCredentialGeneration(credentialGeneration);
+			await this.client.storage.set("accessToken", result.accessToken);
+			this.assertCredentialGeneration(credentialGeneration);
+			this.client.authToken = result.accessToken;
+			this.scheduleRefresh();
+			this.client.emit("update:authtoken", result.accessToken);
+			this.refreshGeneration++;
+		});
 	}
 
 	public async setAccessToken(accessToken: string): Promise<void> {
 		if (!accessToken) {
 			throw new InternalError("InvalidToken", "access token is empty");
 		}
+		this.invalidateRefreshWork();
+		await this.withCredentialWriteLock(() =>
+			this.writeAccessToken(accessToken)
+		);
+	}
+
+	private async writeAccessToken(accessToken: string): Promise<void> {
 		await this.client.storage.set("accessToken", accessToken);
 		this.client.authToken = accessToken;
 		this.scheduleRefresh();
@@ -122,17 +133,21 @@ export class AuthService implements BaseService {
 			throw new InternalError("InvalidToken", "access token is empty");
 		}
 		this.invalidateRefreshWork();
-		if (credential.refreshToken) {
-			await this.client.storage.set("refreshToken", credential.refreshToken);
-		} else {
-			await this.clearRefreshState();
-		}
-		if (credential.expire !== undefined && Number.isFinite(credential.expire)) {
-			await this.client.storage.set("expire", credential.expire);
-		} else {
-			await this.client.storage.delete("expire");
-		}
-		await this.setAccessToken(credential.accessToken);
+		await this.withCredentialWriteLock(async () => {
+			if (credential.refreshToken) {
+				await this.client.storage.set("refreshToken", credential.refreshToken);
+			} else {
+				await this.client.storage.delete("refreshToken");
+			}
+			if (
+				credential.expire !== undefined && Number.isFinite(credential.expire)
+			) {
+				await this.client.storage.set("expire", credential.expire);
+			} else {
+				await this.client.storage.delete("expire");
+			}
+			await this.writeAccessToken(credential.accessToken);
+		});
 	}
 
 	/** Persist a new login's refresh credentials and invalidate older refresh work. */
@@ -144,29 +159,59 @@ export class AuthService implements BaseService {
 			throw new InternalError("InvalidToken", "refresh token is empty");
 		}
 		this.invalidateRefreshWork();
-		await this.client.storage.set("refreshToken", refreshToken);
-		if (expire !== undefined && Number.isFinite(expire)) {
-			await this.client.storage.set("expire", expire);
-		} else {
-			await this.client.storage.delete("expire");
-		}
+		await this.withCredentialWriteLock(async () => {
+			await this.client.storage.set("refreshToken", refreshToken);
+			if (expire !== undefined && Number.isFinite(expire)) {
+				await this.client.storage.set("expire", expire);
+			} else {
+				await this.client.storage.delete("expire");
+			}
+		});
 		this.scheduleRefresh();
 	}
 
 	public async clearRefreshState(): Promise<void> {
 		this.invalidateRefreshWork();
-		await this.client.storage.delete("refreshToken");
-		await this.client.storage.delete("expire");
+		await this.withCredentialWriteLock(async () => {
+			await this.client.storage.delete("refreshToken");
+			await this.client.storage.delete("expire");
+		});
 	}
 
 	/** Remove the complete persisted session after the server invalidates it. */
 	public async clearStoredSession(): Promise<void> {
-		this.cancelScheduledRefresh();
+		this.invalidateRefreshWork();
 		delete this.client.authToken;
-		await Promise.all([
-			this.client.storage.delete("accessToken"),
-			this.clearRefreshState(),
-		]);
+		await this.withCredentialWriteLock(async () => {
+			await this.client.storage.delete("accessToken");
+			await this.client.storage.delete("refreshToken");
+			await this.client.storage.delete("expire");
+		});
+	}
+
+	private async withCredentialWriteLock<T>(
+		operation: () => Promise<T>,
+	): Promise<T> {
+		let release!: () => void;
+		const previous = this.credentialWriteLock;
+		this.credentialWriteLock = new Promise<void>((resolve) =>
+			release = resolve
+		);
+		await previous;
+		try {
+			return await operation();
+		} finally {
+			release();
+		}
+	}
+
+	private assertCredentialGeneration(generation: number): void {
+		if (generation !== this.credentialGeneration) {
+			throw new InternalError(
+				"SessionChanged",
+				"credentials changed while refreshing",
+			);
+		}
 	}
 
 	/** Restore saved credentials and refresh before expiry when possible. */

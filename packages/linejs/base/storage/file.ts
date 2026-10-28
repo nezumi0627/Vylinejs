@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import process from "node:process";
 import { BaseStorage, type Storage } from "./base.ts";
 
 interface FileState {
@@ -39,6 +40,7 @@ export class FileStorage extends BaseStorage {
 				this.state.data = data;
 				this.updateMetadataSync();
 			}
+			restrictPermissionsSync(this.path);
 			return;
 		}
 
@@ -60,6 +62,7 @@ export class FileStorage extends BaseStorage {
 				mode: 0o600,
 			});
 		}
+		restrictPermissionsSync(this.path);
 		const stat = fs.statSync(this.path);
 		this.state = {
 			data: parseData(initial || "{}"),
@@ -113,15 +116,9 @@ export class FileStorage extends BaseStorage {
 		const serialized = JSON.stringify(data);
 		const tempPath = `${this.path}.${randomUUID()}.tmp`;
 		try {
-			let mode = 0o600;
-			try {
-				mode = (await fsp.stat(this.path)).mode & 0o777;
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			}
 			await fsp.writeFile(tempPath, serialized, {
 				encoding: "utf-8",
-				mode,
+				mode: 0o600,
 			});
 			await fsp.rename(tempPath, this.path);
 			const stat = await fsp.stat(this.path);
@@ -202,6 +199,10 @@ export class FileStorage extends BaseStorage {
 			}
 		}
 	}
+}
+
+function restrictPermissionsSync(path: string): void {
+	if (process.platform !== "win32") fs.chmodSync(path, 0o600);
 }
 
 function parseData(content: string): Record<Storage["Key"], Storage["Value"]> {

@@ -109,8 +109,6 @@ export class E2EE {
 				`e2eeKeys:${mid}`,
 				JSON.stringify(selected),
 			);
-		} else {
-			await this.client.storage.delete(`e2eeKeys:${mid}`);
 		}
 		return {
 			ok: selected !== undefined,

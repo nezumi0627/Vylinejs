@@ -44,3 +44,19 @@ Deno.test("FileStorage detects external file edits", async () => {
 		await Deno.remove(path);
 	}
 });
+
+Deno.test("FileStorage tightens permissive credential-file permissions", async () => {
+	if (Deno.build.os === "windows") return;
+	const path = await Deno.makeTempFile();
+	try {
+		await Deno.chmod(path, 0o644);
+		const storage = new FileStorage(path);
+		assertEquals((await Deno.stat(path)).mode! & 0o777, 0o600);
+		await Deno.chmod(path, 0o644);
+		await storage.set("accessToken", "secret");
+		const info = await Deno.stat(path);
+		assertEquals(info.mode! & 0o777, 0o600);
+	} finally {
+		await Deno.remove(path);
+	}
+});

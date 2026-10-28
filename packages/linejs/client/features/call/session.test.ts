@@ -118,6 +118,18 @@ Deno.test("CallSession.start is idempotent", async () => {
 	assertEquals(r1, r2);
 });
 
+Deno.test("CallSession closes transport when startup signaling fails", async () => {
+	const { client } = fakeClient();
+	const transport = recordingTransport();
+	transport.invite = () => Promise.reject(new Error("invite failed"));
+	const session = new CallSession(client, { to: "u-p", transport });
+
+	await assertRejects(() => session.start(), Error, "invite failed");
+
+	assertEquals(session.state, "failed");
+	assertEquals(transport.closed, true);
+});
+
 Deno.test("CallSession group startup does not wait for a one-to-one answer", async () => {
 	const { client, fakeRoute } = fakeClient();
 	let joined = false;

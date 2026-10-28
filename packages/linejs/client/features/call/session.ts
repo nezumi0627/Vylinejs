@@ -183,6 +183,11 @@ export class CallSession extends TypedEventEmitter<CallSessionEvents> {
 		} catch (e) {
 			this.#setState("failed");
 			const err = e instanceof Error ? e : new Error(String(e));
+			try {
+				await this.#transport.close();
+			} catch {
+				// Preserve the setup failure; close is best-effort cleanup here.
+			}
 			this.emit("error", err);
 			throw err;
 		}

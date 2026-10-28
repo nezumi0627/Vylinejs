@@ -35,7 +35,9 @@ uses the median of three runs:
 
 These are single-machine microbenchmarks, not production workload guarantees.
 Reads use an in-process snapshot and check file metadata for external edits;
-writes preserve the JSON format and atomically replace the file.
+writes preserve the JSON format and atomically replace the file. On POSIX,
+construction and every write restrict the credential file to owner read/write
+(mode `0600`), including files that were previously more permissive.
 
 ## Performance experiments
 
