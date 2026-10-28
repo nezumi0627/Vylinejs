@@ -88,6 +88,14 @@ internal AES-CM processing reduced a paired-run median from 53.5 ms to 44.0 ms
 (about 18%). Results vary by run; reproduce with
 `deno run -A scripts/bench-srtp.ts 1000`.
 
+LEGY request encryption (Deno 2.7.14 / Windows, 1 KiB request bodies, 1,000
+mocked requests per run, two warm-ups and five measured runs; empty mocked
+responses): removing intermediate copies during header/payload assembly and
+wrapping the encrypted bytes as a view brought two run medians from
+116.1/111.9 ms to 97.3/97.1 ms (about 13–16%). The
+benchmark measures the request encryption path without network latency or
+response decryption. Reproduce with `deno run -A scripts/bench-legy.ts 1000`.
+
 Compact text encoding (Deno 2.7.14 / Windows, 500 encodes per run, five runs)
 now measures UTF-8 length before choosing an encoding, then allocates only the
 selected representation. For 13,000 ASCII characters, the median fell from
