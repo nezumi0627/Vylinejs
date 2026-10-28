@@ -60,3 +60,19 @@ export abstract class BaseStorage {
 	 */
 	public abstract migrate(storage: BaseStorage): Promise<void>;
 }
+
+/** Use a backend batch when present while keeping older duck-typed stores usable. */
+export async function persistMany(
+	storage:
+		& Pick<BaseStorage, "set">
+		& Partial<Pick<BaseStorage, "setMany">>,
+	entries: Record<Storage["Key"], Storage["Value"]>,
+): Promise<void> {
+	if (typeof storage.setMany === "function") {
+		await storage.setMany(entries);
+		return;
+	}
+	for (const [key, value] of Object.entries(entries)) {
+		await storage.set(key, value as Storage["Value"]);
+	}
+}

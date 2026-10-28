@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { FileStorage } from "./file.ts";
+import { MemoryStorage } from "./memory.ts";
 
 Deno.test("FileStorage shares updates between instances without exposing mutable state", async () => {
 	const path = await Deno.makeTempFile();
@@ -97,6 +98,39 @@ Deno.test("FileStorage detects external file edits", async () => {
 		assertEquals(await storage.get("external"), "changed-size");
 	} finally {
 		await Deno.remove(path);
+	}
+});
+
+Deno.test("MemoryStorage migration writes a file destination as one batch", async () => {
+	const path = await Deno.makeTempFile();
+	try {
+		const source = new MemoryStorage({ first: "one", second: "two" });
+		const destination = new FileStorage(path);
+		await source.migrate(destination);
+		assertEquals(await destination.getAll(), {
+			first: "one",
+			second: "two",
+		});
+	} finally {
+		await Deno.remove(path);
+	}
+});
+
+Deno.test("FileStorage migration writes a file destination as one batch", async () => {
+	const sourcePath = await Deno.makeTempFile();
+	const destinationPath = await Deno.makeTempFile();
+	try {
+		const source = new FileStorage(sourcePath);
+		const destination = new FileStorage(destinationPath);
+		await source.setMany({ first: "one", second: "two" });
+		await source.migrate(destination);
+		assertEquals(await destination.getAll(), {
+			first: "one",
+			second: "two",
+		});
+	} finally {
+		await Deno.remove(sourcePath);
+		await Deno.remove(destinationPath);
 	}
 });
 

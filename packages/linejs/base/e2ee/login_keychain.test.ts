@@ -8,11 +8,18 @@ import { writeStruct } from "../thrift/readwrite/write.ts";
 
 function fixture(ids = [10, 20, 30, 40, 50, 60, 70, 80], corrupt = false) {
 	const saved = new Map<string, string>();
+	let batchWrites = 0;
 	const e2ee = new E2EE({
 		thrift: new Thrift(),
 		storage: {
 			set: (key: string, value: string) => {
 				saved.set(key, value);
+			},
+			setMany: (entries: Record<string, string>) => {
+				batchWrites++;
+				for (const [key, value] of Object.entries(entries)) {
+					saved.set(key, value);
+				}
 			},
 		},
 		talk: { getE2EEPublicKeys: () => Promise.resolve([]) },
@@ -48,7 +55,18 @@ function fixture(ids = [10, 20, 30, 40, 50, 60, 70, 80], corrupt = false) {
 		encryptedKeyChain: encrypted.toString("base64"),
 		e2eeVersion: 2,
 	};
-	return { e2ee, saved, secret, publicKey, encrypted, data, keys };
+	return {
+		e2ee,
+		saved,
+		secret,
+		publicKey,
+		encrypted,
+		data,
+		keys,
+		get batchWrites() {
+			return batchWrites;
+		},
+	};
 }
 
 Deno.test("login keychain selects the requested eighth entry and preserves every generation", async () => {
@@ -57,6 +75,7 @@ Deno.test("login keychain selects the requested eighth entry and preserves every
 	assertEquals(result?.privKey, f.keys[7].privKey);
 	assertEquals(result?.pubKey, f.keys[7].pubKey);
 	assertEquals(f.saved.size, 8);
+	assertEquals(f.batchWrites, 1);
 	for (const key of f.keys) {
 		const stored = JSON.parse(f.saved.get(`e2eeKeys:${key.keyId}`)!);
 		assertEquals(stored.keyId, key.keyId);

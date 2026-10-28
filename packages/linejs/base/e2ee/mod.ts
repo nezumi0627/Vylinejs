@@ -6,6 +6,7 @@ import nacl from "tweetnacl";
 import { InternalError } from "../core/utils/error.ts";
 import * as LINETypes from "@evex/linejs-types";
 import type { BaseClient } from "../core/mod.ts";
+import { persistMany } from "../storage/base.ts";
 import { ContentType } from "../thrift/readwrite/struct.ts";
 import CryptoJS from "crypto-js";
 import { gcmsiv } from "@noble/ciphers/aes.js";
@@ -74,42 +75,40 @@ export class E2EE {
 			pubKey: string;
 			e2eeVersion?: LooseType;
 		}> = [];
+		const updates: Record<string, string> = {};
 
 		for (const key of registered) {
 			const raw = await this.client.storage.get(`e2eeKeys:${key.keyId}`);
 			if (typeof raw !== "string") continue;
+			let local: { privKey?: string; e2eeVersion?: LooseType };
 			try {
-				const local = JSON.parse(raw) as {
+				local = JSON.parse(raw) as {
 					privKey?: string;
 					e2eeVersion?: LooseType;
 				};
-				if (typeof local.privKey !== "string") continue;
-				const privKey = Buffer.from(local.privKey, "base64");
-				if (!this.verifyE2EEKeyPair(privKey, key.pubKey)) continue;
-				const verified = {
-					keyId: key.keyId,
-					privKey: local.privKey,
-					pubKey: key.pubKey.toString("base64"),
-					e2eeVersion: local.e2eeVersion,
-				};
-				await this.client.storage.set(
-					`e2eeKeys:${key.keyId}`,
-					JSON.stringify(verified),
-				);
-				matched.push(verified);
 			} catch {
 				// Ignore malformed local key records; never treat them as verified.
+				continue;
 			}
+			if (typeof local.privKey !== "string") continue;
+			const privKey = Buffer.from(local.privKey, "base64");
+			if (!this.verifyE2EEKeyPair(privKey, key.pubKey)) continue;
+			const verified = {
+				keyId: key.keyId,
+				privKey: local.privKey,
+				pubKey: key.pubKey.toString("base64"),
+				e2eeVersion: local.e2eeVersion,
+			};
+			updates[`e2eeKeys:${key.keyId}`] = JSON.stringify(verified);
+			matched.push(verified);
 		}
 
 		matched.sort((a, b) => a.keyId - b.keyId);
 		const selected = matched.at(-1);
 		if (selected) {
-			await this.client.storage.set(
-				`e2eeKeys:${mid}`,
-				JSON.stringify(selected),
-			);
+			updates[`e2eeKeys:${mid}`] = JSON.stringify(selected);
 		}
+		await persistMany(this.client.storage, updates);
 		return {
 			ok: selected !== undefined,
 			selectedKeyId: selected?.keyId ?? null,
@@ -449,17 +448,11 @@ export class E2EE {
 		const key = JSON.stringify(data);
 		// Consumers that predate the per-keyId slot only know the unsuffixed
 		// one, so keep it pointing at the key used most recently.
-		const groupKeys = {
+		const groupKeys: Record<string, string> = {
 			[`e2eeGroupKeys:${mid}:${groupKeyId}`]: key,
 			[`e2eeGroupKeys:${mid}`]: key,
 		};
-		if (typeof this.client.storage.setMany === "function") {
-			await this.client.storage.setMany(groupKeys);
-		} else {
-			for (const [storageKey, value] of Object.entries(groupKeys)) {
-				await this.client.storage.set(storageKey, value);
-			}
-		}
+		await persistMany(this.client.storage, groupKeys);
 		return data;
 	}
 	public async tryRegisterE2EEGroupKey(
@@ -596,17 +589,16 @@ export class E2EE {
 			// Server verification is deferred until the login token is installed.
 			this.loginKey = { keyId, privKey };
 			// Keep historical generations under their own IDs, never the selected ID.
+			const storedKeys: Record<string, string> = {};
 			for (const key of keys) {
-				await this.client.storage.set(
-					"e2eeKeys:" + key.keyId,
-					JSON.stringify({
-						keyId: key.keyId,
-						privKey: key.privKey.toString("base64"),
-						pubKey: key.pubKey.toString("base64"),
-						e2eeVersion,
-					}),
-				);
+				storedKeys[`e2eeKeys:${key.keyId}`] = JSON.stringify({
+					keyId: key.keyId,
+					privKey: key.privKey.toString("base64"),
+					pubKey: key.pubKey.toString("base64"),
+					e2eeVersion,
+				});
 			}
+			await persistMany(this.client.storage, storedKeys);
 			return {
 				keyId,
 				privKey,
@@ -1406,11 +1398,11 @@ export class E2EE {
 				pubKey: pubKey.toString("base64"),
 				e2eeVersion: 1,
 			};
-			await this.client.storage.set(
-				"e2eeKeys:" + keyId,
-				JSON.stringify(keyData),
-			);
-			await this.saveE2EESelfKeyData(keyData);
+			const serialized = JSON.stringify(keyData);
+			await persistMany(this.client.storage, {
+				[`e2eeKeys:${keyId}`]: serialized,
+				[`e2eeKeys:${this.client.profile?.mid}`]: serialized,
+			});
 			this.e2eeLog("registerE2EEKeyPairSuccess", { keyId });
 			return { keyId, privKey, pubKey, e2eeVersion: 1 };
 		} catch (e) {
