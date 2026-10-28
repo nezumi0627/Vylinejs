@@ -24,9 +24,13 @@ eviction is performed.
 LIFF send-token caching is scoped to account MID, LIFF ID, and recipient, with
 a 128-entry LRU bound to cap memory on long-running clients.
 
-VOOM channel tokens are scoped to the active account. Concurrent requests for
-the same account and channel share one token issuance; changing accounts clears
-the previous account's cache.
+LINE VOOM ended on 2026-09-30. Its old `client.voom`, `client.voomRest`, and
+`client.base.timeline` APIs remain temporarily for source compatibility, are
+marked deprecated, and now fail immediately without issuing tokens or making
+network requests. Remove their use from applications; there is no replacement
+service announced. The compatibility exports are planned for removal in a
+future major version. Generated protocol enums and fields remain where needed
+to decode historical LINE data.
 
 ## FileStorage measurement
 

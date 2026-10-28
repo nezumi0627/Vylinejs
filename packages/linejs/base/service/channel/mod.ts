@@ -1,4 +1,5 @@
-// For Channel (channel, voom, etc)
+// Channel-scoped LINE services (historical VOOM channel IDs may still appear
+// in protocol data).
 
 import { LINEStruct, type ProtocolKey } from "../../thrift/mod.ts";
 import type * as LINETypes from "@evex/linejs-types";
@@ -14,8 +15,7 @@ export class ChannelService implements BaseService {
 	}
 	/**
 	 * @description Gets the ChannelToken by channelId.\
-	 * channelIds:
-	 * - linevoom: 1341209850
+	 * Historical channel IDs may remain in older account and protocol data.
 	 */
 	async approveChannelAndIssueChannelToken(
 		...param: Parameters<

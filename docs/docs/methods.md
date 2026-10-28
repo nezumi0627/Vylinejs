@@ -83,7 +83,7 @@ for await (const event of polling.listenSquareEvents()) {
 
 # Calling LINE REST endpoints directly
 
-Some LINE subsystems (Album/Moa, Timeline REST helpers, ...) speak JSON over
+Some LINE subsystems (Album/Moa, ...) speak JSON over
 HTTPS through the LEGY proxy rather than Thrift, but LINEJS's default
 `getHeader("GET")` helper is tuned for Thrift and sets
 `accept: application/x-thrift` and `content-type: application/x-thrift`. If you
@@ -116,3 +116,8 @@ if (data.code !== undefined && data.code !== 0) {
 
 Use `client.base.moa` for [album operations](./moa.md); it handles these headers
 and checks HTTP and application errors for you.
+
+LINE VOOM and its Timeline REST endpoints ended on 2026-09-30. Vylinejs keeps
+their old exports temporarily for source compatibility, marks them deprecated,
+and fails immediately when they are called. There is no replacement for those
+endpoints.
