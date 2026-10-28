@@ -30,6 +30,7 @@ function makeFake() {
 	};
 	return {
 		client: fakeClient as never,
+		profile: fakeClient.base.profile,
 		issued,
 		fetched,
 	};
@@ -53,6 +54,27 @@ Deno.test("VoomClient.getToken — caches per-channel", async () => {
 	assertEquals(issued, [VoomChannelId.TIMELINE, VoomChannelId.NOTE]);
 });
 
+Deno.test("VoomClient.getToken — coalesces concurrent channel-token requests", async () => {
+	const { client, issued } = makeFake();
+	const vc = createVoomClient(client);
+	const tokens = await Promise.all([
+		vc.getToken("TIMELINE"),
+		vc.getToken("TIMELINE"),
+		vc.getToken("TIMELINE"),
+	]);
+	assertEquals(tokens, Array(3).fill(`tok-${VoomChannelId.TIMELINE}`));
+	assertEquals(issued, [VoomChannelId.TIMELINE]);
+});
+
+Deno.test("VoomClient.getToken — does not reuse a token after account switch", async () => {
+	const { client, profile, issued } = makeFake();
+	const vc = createVoomClient(client);
+	await vc.getToken("TIMELINE");
+	profile.mid = "u-another-account";
+	await vc.getToken("TIMELINE");
+	assertEquals(issued, [VoomChannelId.TIMELINE, VoomChannelId.TIMELINE]);
+});
+
 Deno.test("VoomClient.call — X-Line-ChannelToken + X-Line-Mid headers (live-verified)", async () => {
 	const { client, fetched } = makeFake();
 	const vc = createVoomClient(client);
@@ -60,7 +82,10 @@ Deno.test("VoomClient.call — X-Line-ChannelToken + X-Line-Mid headers (live-ve
 	assertEquals(r.code, 200);
 	assert(r.result);
 	assertEquals(fetched.length, 1);
-	assertEquals(fetched[0].url, "https://gw.line.naver.jp/mh/api/v57/post/list.json");
+	assertEquals(
+		fetched[0].url,
+		"https://gw.line.naver.jp/mh/api/v57/post/list.json",
+	);
 	assertEquals(fetched[0].headers["X-Line-ChannelToken"], "tok-1341209950");
 	assertEquals(fetched[0].headers["X-Line-Mid"], "u-test-mid");
 });
@@ -91,12 +116,18 @@ Deno.test("VoomClient.timelineStatus — uses /tl prefix + TIMELINE channel toke
 	assertEquals(issued, [VoomChannelId.TIMELINE]);
 	const u = new URL(fetched[0].url);
 	assertEquals(u.pathname, "/tl/api/v57/timeline/tab/status.json");
-	assertEquals(fetched[0].headers["X-Line-ChannelToken"], `tok-${VoomChannelId.TIMELINE}`);
+	assertEquals(
+		fetched[0].headers["X-Line-ChannelToken"],
+		`tok-${VoomChannelId.TIMELINE}`,
+	);
 });
 
 Deno.test("VoomClient.call — routing prefix selects the right gateway path", async () => {
 	const { client, fetched } = makeFake();
 	const vc = createVoomClient(client);
 	await vc.call("ALBUM", { routing: "ALBUM", path: "/api/v1.0/initialize" });
-	assertEquals(new URL(fetched[0].url).pathname, "/ext/album/api/v1.0/initialize");
+	assertEquals(
+		new URL(fetched[0].url).pathname,
+		"/ext/album/api/v1.0/initialize",
+	);
 });
