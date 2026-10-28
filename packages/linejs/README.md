@@ -26,8 +26,9 @@ Vylinejs keeps LINEJS's familiar API and protocol foundation while being
 maintained as an independent fork. That gives it room to respond quickly to
 new LINE protocol changes and user requests, evolve features with frequent
 maintenance, and make fork-specific choices without waiting for upstream
-changes. Performance work targets measured CPU and memory bottlenecks; see the
-[stability notes](../../docs/VYLINEJS_STABILITY.md) for benchmarks and limits.
+changes. Performance work targets measured CPU time and unnecessary allocations
+and copies; see the [stability notes](../../docs/VYLINEJS_STABILITY.md) for
+benchmarks and limits.
 Portable improvements are also sent back to LINEJS as focused pull requests.
 
 ---

@@ -14,8 +14,8 @@ back upstream as focused pull requests.
 - **Quick adaptation:** as an independent fork, Vylinejs can respond directly to
   new LINE protocol changes and user requests, with frequent maintenance and
   room to evolve its API when needed.
-- **Performance work:** hot paths are measured and optimized to remove concrete
-  CPU and memory bottlenecks. See the [stability notes](docs/VYLINEJS_STABILITY.md)
+- **Performance work:** hot paths are measured and optimized to reduce CPU time
+  and unnecessary allocations and copies. See the [stability notes](docs/VYLINEJS_STABILITY.md)
   for benchmarks and their limits.
 - **Upstream-friendly:** improvements that are useful to LINEJS are sent back as
   focused contributions.

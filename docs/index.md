@@ -29,5 +29,5 @@ features:
     details: Respond directly to new protocol changes and user requests, with frequent updates.
   - title: Measured Performance Work
     icon: 🚀
-    details: Profile hot paths and remove demonstrated CPU and memory bottlenecks.
+    details: Profile hot paths and reduce measured CPU time and unnecessary allocations and copies.
 ---
