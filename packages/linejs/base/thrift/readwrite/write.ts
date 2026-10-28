@@ -30,18 +30,22 @@ export function writeThrift(
 	myprot.flush();
 	buftra.flush();
 
-	let myBuf = chunks.length ? Buffer.concat(chunks) : Buffer.from([]);
-	if (myBuf.length === 1 && myBuf[0] === 0) {
-		myBuf = Buffer.from([]);
-	}
-
 	const header = genHeader[Protocol == thrift.TBinaryProtocol ? 3 : 4](name);
-	const totalLen = header.length + myBuf.length + 1;
-	const writedBinary = new Uint8Array(totalLen);
-	writedBinary.set(header, 0);
-	writedBinary.set(myBuf, header.length);
-	writedBinary[totalLen - 1] = 0;
-	return writedBinary;
+	const bodyLength = chunks.reduce((length, chunk) => length + chunk.length, 0);
+	const bodyIsEmptySentinel = bodyLength === 1 &&
+		chunks.find((chunk) => chunk.length > 0)?.[0] === 0;
+	const totalLen = header.length + (bodyIsEmptySentinel ? 0 : bodyLength) + 1;
+	const output = new Uint8Array(totalLen);
+	output.set(header);
+	if (!bodyIsEmptySentinel) {
+		let offset = header.length;
+		for (const chunk of chunks) {
+			output.set(chunk, offset);
+			offset += chunk.length;
+		}
+	}
+	output[totalLen - 1] = 0;
+	return output;
 }
 
 export function writeStruct(

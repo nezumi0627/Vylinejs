@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { writeStruct, writeThrift } from "./write.ts";
 import { readThrift, readThriftStruct } from "./read.ts";
-import { type NestedArray, Protocols } from "./declares.ts";
+import { genHeader, type NestedArray, Protocols } from "./declares.ts";
 
 // Thrift type id for I64.
 const I64 = 10;
@@ -11,6 +11,11 @@ const hex = (data: Uint8Array): string =>
 
 const i64Field = (fid: number, value: bigint): NestedArray =>
 	[[I64, fid, value]] as NestedArray;
+
+Deno.test("writeThrift keeps empty-struct sentinel behavior", () => {
+	const actual = writeThrift([], "empty", Protocols[4]);
+	assertEquals(actual, Uint8Array.from([...genHeader[4]("empty"), 0]));
+});
 
 // Regression for #193: bigint I64 fields (e.g. a message ID in talk.react)
 // were passed to node-int64 as a decimal string, which the library parses as
