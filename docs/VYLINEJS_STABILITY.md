@@ -10,7 +10,7 @@ and E2EE key history intact.
 | --- | --- |
 | Talk/Square push events | At most 200 pending events per stream. Producers wait for consumption; queued events survive reader cancellation and stream restart. Shutdown rejects blocked producers so the server can replay events whose revision was not advanced. |
 | PLANET control messages | 256 queued messages. Overflow ends the call and reports `control_queue_overflow`. |
-| PLANET and Andromeda audio/RTP | 100 queued packets and 1 MiB per transport. Oldest stale packets are dropped; an oversized packet is discarded. Andromeda receive waiters are released on close. |
+| PLANET and Andromeda audio/RTP | 100 queued packets and 1 MiB per transport. Oldest stale packets are dropped; an oversized packet is discarded. Andromeda SIP waiters are removed on timeout and rejected on close. |
 | PLANET video receive work | 128 pending packets and 1 MiB per serial queue. Old queued video work is discarded first to keep playback current. |
 | Decoded video frames | At most 30 queued frames; the oldest frame is discarded when full. |
 | Agent I / LINE AI SSE | At most 1 MiB per event. Early iteration exit cancels the underlying reader. |
@@ -23,6 +23,10 @@ eviction is performed.
 
 LIFF send-token caching is scoped to account MID, LIFF ID, and recipient, with
 a 128-entry LRU bound to cap memory on long-running clients.
+
+VOOM channel tokens are scoped to the active account. Concurrent requests for
+the same account and channel share one token issuance; changing accounts clears
+the previous account's cache.
 
 ## FileStorage measurement
 
@@ -59,12 +63,12 @@ through `setMany()`, it took 3.11 ms and 5.38–7.71 ms, respectively. A
 
 ## Performance experiments
 
-Thrift serializer experiment (Deno 2.7.14 / Windows, 10,000 compact-protocol
-messages, 1,000 warm-up calls, five measured runs): writing chunks directly to
-the final output buffer took a median 297.06 ms versus 279.47 ms with the
-existing `Buffer.concat` path. The runs overlapped and the candidate was slower,
-so the change was reverted. Re-run `deno run -A scripts/bench-thrift-encode.ts`
-before repeating this experiment.
+Thrift serializer (Deno 2.7.14 / Windows, 10,000 compact-protocol messages,
+1,000 warm-up calls, five measured runs): direct chunk-to-output copying removes
+the intermediate concatenated body and second full-body copy. One measured
+comparison was 309 ms before and 313 ms after, within run-to-run noise; no
+throughput improvement is claimed. This change targets peak buffering and copy
+count. Re-run `deno run -A scripts/bench-thrift-encode.ts` to compare.
 
 PLANET decode experiment (same runtime, 20,000 representative INFO_REQ packets,
 2,000 warm-up calls, five runs): the former outer-field parse plus message parse
@@ -72,14 +76,23 @@ had an 86.44 ms median; the single message parse had a 77.04 ms median (10.9%
 less time). Debug-only structural decoding remains available when a debug hook
 is configured. Re-run `deno run -A scripts/bench-planet-decode.ts` to compare.
 
-EVS3 reassembly experiment (Deno 2.7.14 / Windows, 64,000-byte VP8 frame,
-1,000-byte fragments, 500 frames per run, five runs): the current assembler
-had a 54.98 ms median. Caching parsed fragment offsets reduced repeated parsing
-in the code, but repeated candidate medians ranged from 53.11 to 54.20 ms and
-an earlier run measured 72.80 ms. This was within run-to-run noise, so the
-candidate was reverted. The reproducible workload is
-`deno run -A scripts/bench-evs3.ts`; the assembler round-trip regression test is
-`packages/linejs/client/features/call/planet/evs3.test.ts`.
+EVS3 reassembly (Deno 2.7.14 / Windows, 64,000-byte VP8 frame, 1,000-byte
+fragments, 500 frames per run, five runs): reusing the descriptor already
+parsed by `Evs3Assembler.push()` reduced the median from 59.0 ms to 54.8 ms
+(about 7%). The previous offset-caching experiment had no robust gain and was
+reverted. Reproduce with `deno run -A scripts/bench-evs3.ts`.
+
+SRTP packet processing (Deno 2.7.14 / Windows, 1,000 160-byte RTP packets,
+encrypt plus decrypt, five measured runs): static crypto imports and synchronous
+internal AES-CM processing reduced a paired-run median from 53.5 ms to 44.0 ms
+(about 18%). Results vary by run; reproduce with
+`deno run -A scripts/bench-srtp.ts 1000`.
+
+Group audio mixing now validates decoded PCM in one pass and removes expired
+jitter chunks in place. The transport skips receive/RTP debug-record creation
+when no debug callback is configured. Andromeda removes timed-out SIP waiters
+and cancels them on close. These paths have regression coverage; no separate
+throughput claims are made for them.
 
 ## Upstream issue status
 
