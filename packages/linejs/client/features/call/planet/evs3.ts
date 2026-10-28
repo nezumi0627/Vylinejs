@@ -243,7 +243,7 @@ export class Evs3Assembler {
 			}
 			const early = pd.begin ? this.#early : undefined;
 			if (pd.begin) this.#early = undefined;
-			let frame = this.#push(packet, now);
+			let frame = this.#push(packet, now, pd);
 			if (!frame && this.#picture && early?.id === id) {
 				for (
 					const part of [...early.packets.values()].sort(
@@ -283,8 +283,11 @@ export class Evs3Assembler {
 			(keyframe || (advance > 0 && advance < 0x80000000));
 	}
 
-	#push(packet: VideoRtpPacket, now: number): EncodedVideoFrame | undefined {
-		const pd = parseEvs3(packet.payload);
+	#push(
+		packet: VideoRtpPacket,
+		now: number,
+		pd = parseEvs3(packet.payload),
+	): EncodedVideoFrame | undefined {
 		const id = `${packet.ssrc}/${packet.timestamp}/${pd.pictureId}`;
 		if (this.#picture && now - this.#picture.since > 1000) this.#discard();
 		if (this.#picture?.id !== id) {
