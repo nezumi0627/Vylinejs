@@ -143,7 +143,7 @@ export function writeCompactI64(out: number[], value: bigint): void {
 
 function writeCompactBinary(out: number[], data: Uint8Array): void {
 	writeVarint(out, BigInt(data.length));
-	out.push(...data);
+	for (const byte of data) out.push(byte);
 }
 
 function writeVarint(out: number[], value: bigint): void {

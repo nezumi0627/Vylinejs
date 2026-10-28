@@ -81,3 +81,18 @@ Deno.test("decodeCompactMessageResponse throws compact error code", () => {
 	assertInstanceOf(error, CompactMessageProtocolError);
 	assertEquals(error.code, 82);
 });
+
+Deno.test("packCompactE2EEMessage handles large binary chunks without argument expansion", () => {
+	const payload = new Uint8Array(300_000).fill(0x5a);
+	const packed = packCompactE2EEMessage(1, "u" + "00".repeat(16), [
+		new Uint8Array(0),
+		payload,
+		new Uint8Array(0),
+		new Uint8Array(4),
+		new Uint8Array(4),
+	]);
+	assertEquals(packed.length, 20 + 1 + 3 + payload.length + 1 + 1 + 1);
+	assertEquals(packed[19], 0x02);
+	assertEquals(Array.from(packed.slice(21, 24)), [0xe0, 0xa7, 0x12]);
+	assertEquals(packed[24], 0x5a);
+});
