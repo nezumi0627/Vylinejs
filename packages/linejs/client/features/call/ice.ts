@@ -25,14 +25,25 @@ export interface IceCandidate {
 }
 
 /** Compute the standard ICE priority for a candidate. */
-export function icePriority(type: IceCandidateType, componentId: number, localPref = 65535): number {
-	const typePref = type === "host" ? 126 : type === "srflx" ? 100 : type === "prflx" ? 110 : 0;
+export function icePriority(
+	type: IceCandidateType,
+	componentId: number,
+	localPref = 65535,
+): number {
+	const typePref = type === "host"
+		? 126
+		: type === "srflx"
+		? 100
+		: type === "prflx"
+		? 110
+		: 0;
 	return ((typePref << 24) | (localPref << 8) | (256 - componentId)) >>> 0;
 }
 
 /** Format a candidate as the `candidate:` line value (the bit after `a=`). */
 export function formatCandidate(c: IceCandidate): string {
-	let s = `candidate:${c.foundation} ${c.componentId} ${c.transport} ${c.priority} ${c.address} ${c.port} typ ${c.type}`;
+	let s =
+		`candidate:${c.foundation} ${c.componentId} ${c.transport} ${c.priority} ${c.address} ${c.port} typ ${c.type}`;
 	if (c.relatedAddress && c.relatedPort !== undefined) {
 		s += ` raddr ${c.relatedAddress} rport ${c.relatedPort}`;
 	}
@@ -97,19 +108,38 @@ export async function gatherSrflx(
 	timeoutMs = 5000,
 ): Promise<IceCandidate | null> {
 	const req = await buildBindingRequestAsync({});
-	const reply = new Promise<Uint8Array | null>((res) => {
-		const t = setTimeout(() => res(null), timeoutMs);
-		const onMsg = (buf: Buffer) => {
-			clearTimeout(t);
-			sock.off("message", onMsg);
-			res(new Uint8Array(buf));
+	const buf = await new Promise<Uint8Array | null>((resolve, reject) => {
+		let settled = false;
+		const cleanup = () => {
+			clearTimeout(timer);
+			sock.off("message", onMessage);
+			sock.off("error", onError);
 		};
-		sock.on("message", onMsg);
+		const finish = (value: Uint8Array | null) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			resolve(value);
+		};
+		const fail = (error: Error) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(error);
+		};
+		const onMessage = (message: Buffer) => finish(message);
+		const onError = (error: Error) => fail(error);
+		const timer = setTimeout(() => finish(null), timeoutMs);
+		sock.on("message", onMessage);
+		sock.on("error", onError);
+		try {
+			sock.send(Buffer.from(req), stunPort, stunHost, (error) => {
+				if (error) fail(error);
+			});
+		} catch (error) {
+			fail(error instanceof Error ? error : new Error(String(error)));
+		}
 	});
-	await new Promise<void>((res, rj) =>
-		sock.send(Buffer.from(req), stunPort, stunHost, (e) => e ? rj(e) : res())
-	);
-	const buf = await reply;
 	if (!buf) return null;
 	const msg = parseStun(buf);
 	const addr = readMappedAddress(msg);
@@ -135,16 +165,42 @@ export async function gatherIceCandidates(opts?: {
 	localPort?: number;
 }): Promise<{ socket: dgram.Socket; candidates: IceCandidate[] }> {
 	const sock = dgram.createSocket("udp4");
-	await new Promise<void>((r) =>
-		sock.bind({ address: "0.0.0.0", port: opts?.localPort ?? 0 }, () => r())
-	);
-	const candidates: IceCandidate[] = [];
-	candidates.push(await gatherHost(sock));
-	if (opts?.stunHost) {
-		const srflx = await gatherSrflx(sock, opts.stunHost, opts.stunPort);
-		if (srflx) candidates.push(srflx);
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const onError = (error: Error) => {
+				sock.off("listening", onListening);
+				reject(error);
+			};
+			const onListening = () => {
+				sock.off("error", onError);
+				resolve();
+			};
+			sock.once("error", onError);
+			sock.once("listening", onListening);
+			try {
+				sock.bind({ address: "0.0.0.0", port: opts?.localPort ?? 0 });
+			} catch (error) {
+				sock.off("error", onError);
+				sock.off("listening", onListening);
+				reject(error);
+			}
+		});
+		const candidates: IceCandidate[] = [await gatherHost(sock)];
+		if (opts?.stunHost) {
+			const srflx = await gatherSrflx(sock, opts.stunHost, opts.stunPort);
+			if (srflx) candidates.push(srflx);
+		}
+		return { socket: sock, candidates };
+	} catch (error) {
+		await new Promise<void>((resolve) => {
+			try {
+				sock.close(() => resolve());
+			} catch {
+				/* the socket may not have finished binding */ resolve();
+			}
+		});
+		throw error;
 	}
-	return { socket: sock, candidates };
 }
 
 /** Default STUN servers (public, free). */
