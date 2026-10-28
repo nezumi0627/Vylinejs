@@ -92,16 +92,28 @@ export class AuthService implements BaseService {
 			Number(result.durationUntilRefreshInSec);
 		await this.withCredentialWriteLock(async () => {
 			this.assertCredentialGeneration(credentialGeneration);
-			if (result.refreshToken) {
-				await this.client.storage.set("refreshToken", result.refreshToken);
+			if (
+				Number.isFinite(expire) &&
+				typeof this.client.storage.setMany === "function"
+			) {
+				await this.client.storage.setMany({
+					...(result.refreshToken ? { refreshToken: result.refreshToken } : {}),
+					expire,
+					accessToken: result.accessToken,
+				});
+				this.assertCredentialGeneration(credentialGeneration);
+			} else {
+				if (result.refreshToken) {
+					await this.client.storage.set("refreshToken", result.refreshToken);
+					this.assertCredentialGeneration(credentialGeneration);
+				}
+				if (Number.isFinite(expire)) {
+					await this.client.storage.set("expire", expire);
+				} else await this.client.storage.delete("expire");
+				this.assertCredentialGeneration(credentialGeneration);
+				await this.client.storage.set("accessToken", result.accessToken);
 				this.assertCredentialGeneration(credentialGeneration);
 			}
-			if (Number.isFinite(expire)) {
-				await this.client.storage.set("expire", expire);
-			} else await this.client.storage.delete("expire");
-			this.assertCredentialGeneration(credentialGeneration);
-			await this.client.storage.set("accessToken", result.accessToken);
-			this.assertCredentialGeneration(credentialGeneration);
 			this.client.authToken = result.accessToken;
 			this.scheduleRefresh();
 			this.client.emit("update:authtoken", result.accessToken);
@@ -121,6 +133,10 @@ export class AuthService implements BaseService {
 
 	private async writeAccessToken(accessToken: string): Promise<void> {
 		await this.client.storage.set("accessToken", accessToken);
+		this.applyAccessToken(accessToken);
+	}
+
+	private applyAccessToken(accessToken: string): void {
 		this.client.authToken = accessToken;
 		this.scheduleRefresh();
 		this.client.emit("update:authtoken", accessToken);
@@ -134,6 +150,19 @@ export class AuthService implements BaseService {
 		}
 		this.invalidateRefreshWork();
 		await this.withCredentialWriteLock(async () => {
+			if (
+				credential.refreshToken && credential.expire !== undefined &&
+				Number.isFinite(credential.expire) &&
+				typeof this.client.storage.setMany === "function"
+			) {
+				await this.client.storage.setMany({
+					refreshToken: credential.refreshToken,
+					expire: credential.expire,
+					accessToken: credential.accessToken,
+				});
+				this.applyAccessToken(credential.accessToken);
+				return;
+			}
 			if (credential.refreshToken) {
 				await this.client.storage.set("refreshToken", credential.refreshToken);
 			} else {
@@ -160,6 +189,13 @@ export class AuthService implements BaseService {
 		}
 		this.invalidateRefreshWork();
 		await this.withCredentialWriteLock(async () => {
+			if (
+				expire !== undefined && Number.isFinite(expire) &&
+				typeof this.client.storage.setMany === "function"
+			) {
+				await this.client.storage.setMany({ refreshToken, expire });
+				return;
+			}
 			await this.client.storage.set("refreshToken", refreshToken);
 			if (expire !== undefined && Number.isFinite(expire)) {
 				await this.client.storage.set("expire", expire);

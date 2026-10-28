@@ -21,6 +21,18 @@ export abstract class BaseStorage {
 	): Promise<void>;
 
 	/**
+	 * Persist multiple values. Backends may override this to commit the batch
+	 * atomically; the default preserves compatibility by writing each entry.
+	 */
+	public async setMany(
+		entries: Record<Storage["Key"], Storage["Value"]>,
+	): Promise<void> {
+		for (const [key, value] of Object.entries(entries)) {
+			await this.set(key, value as Storage["Value"]);
+		}
+	}
+
+	/**
 	 * @description Get a value.
 	 *
 	 * @param {Storage["Key"]} key

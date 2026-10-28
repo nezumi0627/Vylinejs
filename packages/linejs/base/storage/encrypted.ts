@@ -50,6 +50,43 @@ export class EncryptedStorage extends BaseStorage {
 		);
 	}
 
+	public override async setMany(
+		entries: Record<Storage["Key"], Storage["Value"]>,
+	): Promise<void> {
+		const encrypted = Object.fromEntries(
+			await Promise.all(
+				Object.entries(entries).map(async ([key, value]) => {
+					const plaintext = new TextEncoder().encode(JSON.stringify(value));
+					const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+					const ciphertext = await crypto.subtle.encrypt(
+						{
+							name: "AES-GCM",
+							iv,
+							additionalData: new TextEncoder().encode(key),
+						},
+						this.key,
+						plaintext,
+					);
+					const packed = Buffer.concat([
+						Buffer.from(iv),
+						Buffer.from(ciphertext),
+					]);
+					return [
+						key,
+						`${ENVELOPE_PREFIX}${packed.toString("base64")}`,
+					] as const;
+				}),
+			),
+		);
+		if (typeof this.backing.setMany === "function") {
+			await this.backing.setMany(encrypted);
+		} else {
+			for (const [key, value] of Object.entries(encrypted)) {
+				await this.backing.set(key, value);
+			}
+		}
+	}
+
 	public async get(
 		key: Storage["Key"],
 	): Promise<Storage["Value"] | undefined> {

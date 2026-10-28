@@ -20,12 +20,20 @@ try {
 	started = performance.now();
 	for (let i = 0; i < setIterations; i++) await storage.set(`bench${i}`, i);
 	const setAverageMs = (performance.now() - started) / setIterations;
+	started = performance.now();
+	await storage.setMany(
+		Object.fromEntries(
+			Array.from({ length: setIterations }, (_, i) => [`batch${i}`, i]),
+		),
+	);
+	const setManyMs = performance.now() - started;
 	console.log(JSON.stringify({
 		keyCount,
 		getIterations,
 		setIterations,
 		getAverageMs,
 		setAverageMs,
+		setManyMs,
 	}));
 } finally {
 	await Deno.remove(path);

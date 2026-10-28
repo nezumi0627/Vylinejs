@@ -447,13 +447,19 @@ export class E2EE {
 			keyId: groupKeyId,
 		};
 		const key = JSON.stringify(data);
-		await this.client.storage.set(
-			`e2eeGroupKeys:${mid}:${groupKeyId}`,
-			key,
-		);
 		// Consumers that predate the per-keyId slot only know the unsuffixed
 		// one, so keep it pointing at the key used most recently.
-		await this.client.storage.set(`e2eeGroupKeys:${mid}`, key);
+		const groupKeys = {
+			[`e2eeGroupKeys:${mid}:${groupKeyId}`]: key,
+			[`e2eeGroupKeys:${mid}`]: key,
+		};
+		if (typeof this.client.storage.setMany === "function") {
+			await this.client.storage.setMany(groupKeys);
+		} else {
+			for (const [storageKey, value] of Object.entries(groupKeys)) {
+				await this.client.storage.set(storageKey, value);
+			}
+		}
 		return data;
 	}
 	public async tryRegisterE2EEGroupKey(
