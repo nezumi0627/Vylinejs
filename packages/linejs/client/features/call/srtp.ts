@@ -2,6 +2,7 @@
 // Key derivation: AES-CM PRF per §4.3.
 
 import { Buffer } from "node:buffer";
+import { createCipheriv, createHmac } from "node:crypto";
 
 const HMAC_TAG_LEN = 10; // SHA1_80 = 80 bits = 10 bytes
 const SRTP_KEY_LEN = 16; // AES-CM-128
@@ -20,6 +21,7 @@ const LABEL_RTP_AUTH = 0x01;
 const LABEL_RTP_SALT = 0x02;
 
 /** Derive SRTP session keys from the 30-byte SDES master keying material. */
+// deno-lint-ignore require-await -- Keep the public Promise API stable.
 export async function deriveSrtpContext(
 	masterKeying: Uint8Array,
 ): Promise<SrtpCryptoContext> {
@@ -30,25 +32,24 @@ export async function deriveSrtpContext(
 	}
 	const masterKey = masterKeying.subarray(0, SRTP_KEY_LEN);
 	const masterSalt = masterKeying.subarray(SRTP_KEY_LEN);
-	const cipherKey = await deriveKey(masterKey, masterSalt, LABEL_RTP_ENCR, 16);
-	const authKey = await deriveKey(masterKey, masterSalt, LABEL_RTP_AUTH, 20);
-	const cipherSalt = await deriveKey(masterKey, masterSalt, LABEL_RTP_SALT, 14);
+	const cipherKey = deriveKey(masterKey, masterSalt, LABEL_RTP_ENCR, 16);
+	const authKey = deriveKey(masterKey, masterSalt, LABEL_RTP_AUTH, 20);
+	const cipherSalt = deriveKey(masterKey, masterSalt, LABEL_RTP_SALT, 14);
 	return { cipherKey, cipherSalt, authKey, rocs: new Map() };
 }
 
 /** AES-CM PRF: encrypt the IV with the master key to produce L bytes. */
-async function deriveKey(
+function deriveKey(
 	masterKey: Uint8Array,
 	masterSalt: Uint8Array,
 	label: number,
 	len: number,
-): Promise<Uint8Array> {
+): Uint8Array {
 	// IV = master_salt XOR (label || 0...0), padded right with two zero bytes
 	const iv = new Uint8Array(16);
 	iv.set(masterSalt.subarray(0, 14), 0);
 	iv[7] ^= label;
 	// CM counter mode: encrypt successive 16-byte blocks of (iv || ctr=0,1,…)
-	const { createCipheriv } = await import("node:crypto");
 	const ctrIv = new Uint8Array(16);
 	ctrIv.set(iv);
 	const cipher = createCipheriv("aes-128-ctr", masterKey, Buffer.from(ctrIv));
@@ -57,6 +58,7 @@ async function deriveKey(
 }
 
 /** Encrypt an RTP packet in place + append the 80-bit auth tag. */
+// deno-lint-ignore require-await -- Keep the public Promise API stable.
 export async function srtpEncrypt(
 	ctx: SrtpCryptoContext,
 	rtpPacket: Uint8Array,
@@ -69,7 +71,7 @@ export async function srtpEncrypt(
 	const seq = readU16(rtpPacket, 2);
 	const rocKey = ssrc;
 	const roc = ctx.rocs.get(rocKey) ?? 0;
-	const enc = await aesCmEncrypt(
+	const enc = aesCmEncrypt(
 		ctx.cipherKey,
 		ctx.cipherSalt,
 		ssrc,
@@ -83,7 +85,6 @@ export async function srtpEncrypt(
 	out.set(enc, headerLen);
 
 	// auth = HMAC-SHA1(authKey, packet || ROC) [0..10]
-	const { createHmac } = await import("node:crypto");
 	const h = createHmac("sha1", Buffer.from(ctx.authKey));
 	h.update(Buffer.from(out.subarray(0, rtpPacket.length)));
 	const rocBuf = new Uint8Array(4);
@@ -99,6 +100,7 @@ export async function srtpEncrypt(
 }
 
 /** Verify the auth tag + decrypt an SRTP packet. */
+// deno-lint-ignore require-await -- Keep the public Promise API stable.
 export async function srtpDecrypt(
 	ctx: SrtpCryptoContext,
 	srtpPacket: Uint8Array,
@@ -114,7 +116,6 @@ export async function srtpDecrypt(
 	const seq = readU16(srtpPacket, 2);
 	const roc = ctx.rocs.get(ssrc) ?? 0;
 
-	const { createHmac } = await import("node:crypto");
 	const h = createHmac("sha1", Buffer.from(ctx.authKey));
 	h.update(Buffer.from(inner));
 	const rocBuf = new Uint8Array(4);
@@ -126,7 +127,7 @@ export async function srtpDecrypt(
 	}
 	const headerLen = rtpHeaderLength(inner);
 	const payload = inner.subarray(headerLen);
-	const dec = await aesCmEncrypt(
+	const dec = aesCmEncrypt(
 		ctx.cipherKey,
 		ctx.cipherSalt,
 		ssrc,
@@ -140,14 +141,14 @@ export async function srtpDecrypt(
 	return out;
 }
 
-async function aesCmEncrypt(
+function aesCmEncrypt(
 	key: Uint8Array,
 	salt: Uint8Array,
 	ssrc: number,
 	roc: number,
 	seq: number,
 	payload: Uint8Array,
-): Promise<Uint8Array> {
+): Uint8Array {
 	// IV = (salt || 0_16) XOR (ssrc<<64 | roc<<32 | seq<<16) per RFC 3711 §4.1.1
 	const iv = new Uint8Array(16);
 	iv.set(salt, 0); // first 14 bytes
@@ -165,7 +166,6 @@ async function aesCmEncrypt(
 	iv[12] ^= (seq >>> 8) & 0xff;
 	iv[13] ^= seq & 0xff;
 	// Final two bytes (14..15) start as counter 0 — Node aes-128-ctr increments them
-	const { createCipheriv } = await import("node:crypto");
 	const cipher = createCipheriv(
 		"aes-128-ctr",
 		Buffer.from(key),
