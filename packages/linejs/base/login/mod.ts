@@ -7,6 +7,7 @@ import { Buffer } from "node:buffer";
 import { LINEStruct } from "../thrift/mod.ts";
 import type { BaseClient } from "../core/mod.ts";
 import type { LooseType } from "@evex/loose-types";
+import { randomInt } from "node:crypto";
 import {
 	type AuthTokenInput,
 	parseAuthTokenInput,
@@ -24,6 +25,10 @@ export function registrationAuthEndpoint(
 	return device === "ANDROID" || device === "ANDROIDSECONDARY"
 		? "/api/v4p/rs"
 		: "/api/v3p/rs";
+}
+
+function makeLoginPin(): string {
+	return String(randomInt(100000, 1000000));
 }
 
 interface LoginVer {
@@ -119,6 +124,7 @@ export class Login {
 			throw new InternalError("NotAuthorized", "try login first");
 		}
 		this.client.profile = await this.client.talk.getProfile();
+		await this.client.e2ee.reconcileLoginIdentity(this.client.profile.mid);
 		this.client.emit("ready", this.client.profile);
 	}
 
@@ -158,14 +164,7 @@ export class Login {
 			await this.withQrCode({ v3: options.v3 });
 		} else if (options.authToken) {
 			const credential = parseAuthTokenInput(options.authToken);
-			this.client.emit("update:authtoken", credential.accessToken);
-			this.client.authToken = credential.accessToken;
-			if (credential.refreshToken) {
-				await this.client.storage.set("refreshToken", credential.refreshToken);
-			}
-			if (credential.expire !== undefined) {
-				await this.client.storage.set("expire", credential.expire);
-			}
+			await this.client.auth.saveAuthTokenCredential(credential);
 		} else if (options.email) {
 			await this.withPassword(options);
 		} else {
@@ -194,8 +193,10 @@ export class Login {
 				authToken = await this.requestSQR();
 			}
 		}
-		this.client.emit("update:authtoken", authToken);
-		this.client.authToken = authToken;
+		if (!(options?.v3 ?? isV3Support(this.client.device))) {
+			await this.client.auth.clearRefreshState();
+		}
+		await this.client.auth.setAccessToken(authToken);
 		await this.client.e2ee.verifyLoginKey();
 	}
 
@@ -304,12 +305,7 @@ export class Login {
 			if (!e2eeKeyResult) {
 				await this.client.e2ee.registerE2EEKeyPair();
 			}
-			await this.client.storage.set("refreshToken", tokenInfo[2]);
-			await this.client.storage.set(
-				"expire",
-				tokenInfo[3] + tokenInfo[6],
-			);
-			return tokenInfo[1];
+			return await this.persistV3TokenInfo(tokenInfo);
 		}
 		throw new InternalError(
 			"TimeoutError",
@@ -326,7 +322,6 @@ export class Login {
 	 * @param options.e2ee use e2ee login or not.
 	 */
 	async withPassword(options: PasswordLoginOption): Promise<void> {
-		let authToken: string;
 		if (!EMAIL_REGEX.test(options.email)) {
 			throw new InternalError("RegExpUnmatch", "invalid email");
 		}
@@ -334,39 +329,23 @@ export class Login {
 			throw new InternalError("RegExpUnmatch", "invalid password");
 		}
 
-		if (typeof options.v3 === "undefined") {
-			if (isV3Support(this.client.device)) {
-				authToken = await this.requestEmailLoginV2(
-					options.email,
-					options.password,
-					options.pincode,
-				);
-			} else {
-				authToken = await this.requestEmailLogin(
-					options.email,
-					options.password,
-					options.pincode,
-					options.e2ee,
-				);
-			}
-		} else {
-			if (options.v3) {
-				authToken = await this.requestEmailLoginV2(
-					options.email,
-					options.password,
-					options.pincode,
-				);
-			} else {
-				authToken = await this.requestEmailLogin(
-					options.email,
-					options.password,
-					options.pincode,
-					options.e2ee,
-				);
-			}
+		const useV3 = options.v3 ?? isV3Support(this.client.device);
+		const authToken = useV3
+			? await this.requestEmailLoginV2(
+				options.email,
+				options.password,
+				options.pincode,
+			)
+			: await this.requestEmailLogin(
+				options.email,
+				options.password,
+				options.pincode,
+				options.e2ee,
+			);
+		if (!useV3) {
+			await this.client.auth.clearRefreshState();
 		}
-		this.client.emit("update:authtoken", authToken);
-		this.client.authToken = authToken;
+		await this.client.auth.setAccessToken(authToken);
 		await this.client.e2ee.verifyLoginKey();
 	}
 
@@ -376,7 +355,7 @@ export class Login {
 	 * @param {string} [email] The email to login with.
 	 * @param {string} [password] The password to login with.
 	 * @param {boolean} [enableE2EE=false] Enable E2EE Login or not.
-	 * @param {string} [constantPincode="114514"] The constant pincode.
+	 * @param {string} [constantPincode] Six-digit PIN; generated securely when omitted.
 	 * @returns {Promise<string>} The auth token.
 	 * @throws {InternalError} If the system is not setup yet.
 	 * @throws {InternalError} If the login type is not supported.
@@ -387,10 +366,10 @@ export class Login {
 	public async requestEmailLogin(
 		email: string,
 		password: string,
-		constantPincode: string = "114514",
+		constantPincode: string = makeLoginPin(),
 		enableE2EE: boolean = true,
 	): Promise<string> {
-		if (constantPincode.length !== 6) {
+		if (!/^\d{6}$/.test(constantPincode)) {
 			throw new InternalError(
 				"Invalid constant pincode",
 				"The constant pincode should be 6 digits",
@@ -399,10 +378,7 @@ export class Login {
 
 		this.client.log("login", {
 			method: "email_v1",
-			email,
-			password: password.length,
 			enableE2EE,
-			constantPincode,
 		});
 
 		const rsaKey = await this.getRSAKeyInfo();
@@ -442,6 +418,12 @@ export class Login {
 		);
 
 		if (!response.authToken) {
+			if (typeof response.verifier !== "string" || !response.verifier) {
+				throw new InternalError(
+					"InvalidLoginResponse",
+					"password login challenge has no verifier",
+				);
+			}
 			this.client.emit("pincall", response.pinCode || constantPincode);
 			if (enableE2EE && secret) {
 				const headers = {
@@ -461,7 +443,6 @@ export class Login {
 						},
 					).then((res) => res.json())
 				).result;
-				this.client.log("response", e2eeInfo);
 				await this.client.e2ee.decodeE2EEKeyV1(
 					e2eeInfo.metadata,
 					Buffer.from(secret),
@@ -501,7 +482,6 @@ export class Login {
 						headers: headers,
 					},
 				).then((res) => res.json());
-				this.client.log("response", verifier);
 				response = await this.loginV2(
 					keynm,
 					encryptedMessage,
@@ -523,9 +503,9 @@ export class Login {
 	public async requestEmailLoginV2(
 		email: string,
 		password: string,
-		constantPincode: string = "114514",
+		constantPincode: string = makeLoginPin(),
 	): Promise<string> {
-		if (constantPincode.length !== 6) {
+		if (!/^\d{6}$/.test(constantPincode)) {
 			throw new InternalError(
 				"Invalid constant pincode",
 				"The constant pincode should be 6 digits",
@@ -534,9 +514,6 @@ export class Login {
 
 		this.client.log("login", {
 			method: "email",
-			email,
-			password: password.length,
-			constantPincode,
 		});
 
 		const rsaKey = await this.getRSAKeyInfo();
@@ -570,6 +547,12 @@ export class Login {
 		);
 
 		if (!response[9]) {
+			if (typeof response[3] !== "string" || !response[3]) {
+				throw new InternalError(
+					"InvalidLoginResponse",
+					"password login challenge has no verifier",
+				);
+			}
 			this.client.emit("pincall", constantPincode);
 			const headers = {
 				accept: "application/x-thrift",
@@ -589,7 +572,6 @@ export class Login {
 					},
 				).then((res) => res.json())
 			).result;
-			this.client.log("response", e2eeInfo);
 			await this.client.e2ee.decodeE2EEKeyV1(
 				e2eeInfo.metadata,
 				Buffer.from(secret),
@@ -617,12 +599,38 @@ export class Login {
 			this.client.emit("update:cert", response[2]);
 			await this.registerCert(response[2], email);
 		}
-		await this.client.storage.set("refreshToken", response[9][2]);
-		await this.client.storage.set(
-			"expire",
-			response[9][3] + response[9][6],
+		return await this.persistV3TokenInfo(response[9]);
+	}
+
+	private async persistV3TokenInfo(tokenInfo: unknown): Promise<string> {
+		if (typeof tokenInfo !== "object" || tokenInfo === null) {
+			throw new InternalError(
+				"InvalidLoginResponse",
+				"login response has no V3 token issue result",
+			);
+		}
+		const fields = tokenInfo as Record<number, unknown>;
+		const accessToken = fields[1];
+		const refreshToken = fields[2];
+		const issuedAt = fields[3];
+		const refreshAfter = fields[6];
+		if (
+			typeof accessToken !== "string" || !accessToken ||
+			typeof refreshToken !== "string" || !refreshToken ||
+			typeof issuedAt !== "number" || !Number.isFinite(issuedAt) ||
+			typeof refreshAfter !== "number" || !Number.isFinite(refreshAfter) ||
+			refreshAfter <= 0
+		) {
+			throw new InternalError(
+				"InvalidLoginResponse",
+				"login response has incomplete V3 token credentials",
+			);
+		}
+		await this.client.auth.saveRefreshCredential(
+			refreshToken,
+			issuedAt + refreshAfter,
 		);
-		return response[9][1];
+		return accessToken;
 	}
 
 	/**

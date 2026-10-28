@@ -40,7 +40,10 @@ export function parseAuthTokenInput(
 		}
 		const refreshToken = stringField(parsed.refreshToken) ??
 			(nested ? stringField(nested.refreshToken) : undefined);
-		const expire = numberField(parsed.expire);
+		const nestedExpire = nested
+			? numberField(nested.expire) ?? tokenRefreshDeadline(nested)
+			: undefined;
+		const expire = numberField(parsed.expire) ?? nestedExpire;
 		return { accessToken, refreshToken, expire };
 	}
 
@@ -144,6 +147,16 @@ function stringField(value: unknown): string | undefined {
 function numberField(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value)
 		? value
+		: undefined;
+}
+
+function tokenRefreshDeadline(
+	value: Record<string, unknown>,
+): number | undefined {
+	const issuedAt = numberField(value.tokenIssueTimeEpochSec);
+	const refreshAfter = numberField(value.durationUntilRefreshInSec);
+	return issuedAt !== undefined && refreshAfter !== undefined
+		? issuedAt + refreshAfter
 		: undefined;
 }
 

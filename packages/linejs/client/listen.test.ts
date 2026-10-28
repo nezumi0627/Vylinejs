@@ -1,4 +1,4 @@
-import { assertEquals, assertInstanceOf } from "@std/assert";
+import { assertEquals, assertInstanceOf, assertThrows } from "@std/assert";
 import { Client } from "./client.ts";
 
 interface LogEntry {
@@ -217,4 +217,46 @@ Deno.test("Square continues after a handler failure even when its error logger t
 	await done;
 	assertEquals(count, 2);
 	assertEquals(stub.logs.length, 1);
+});
+
+Deno.test("listen removes its abort listener after both streams finish", async () => {
+	let removed = 0;
+	const signal = {
+		aborted: false,
+		addEventListener() {},
+		removeEventListener() {
+			removed++;
+		},
+	} as unknown as AbortSignal;
+	const stub = stubBase({});
+	const client = new Client(stub.base as never);
+
+	client.listen({ talk: true, square: true, signal });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	assertEquals(removed, 1);
+});
+
+Deno.test("Client.listen rejects a second concurrent listener", () => {
+	let closeStream!: () => void;
+	const base = stubBase({});
+	base.base.createPolling = () => ({
+		listenTalkEvents: () =>
+			new ReadableStream({
+				start(controller) {
+					closeStream = () => controller.close();
+				},
+			}),
+		listenSquareEvents: async function* () {},
+	});
+	base.base.push.opStream.close = () => closeStream();
+	const client = new Client(base.base as never);
+	const controller = new AbortController();
+	client.listen({ talk: true, square: false, signal: controller.signal });
+	assertThrows(
+		() => client.listen({ talk: true, square: false }),
+		Error,
+		"already active",
+	);
+	controller.abort();
 });

@@ -54,7 +54,10 @@ export class RequestClient {
 		this.endpoint = client.endpoint ?? "legy.line-apps.com";
 		this.systemType =
 			`${deviceDetails.device}\t${deviceDetails.appVersion}\t${deviceDetails.systemName}\t${deviceDetails.systemVersion}`;
-		this.userAgent = `Line/${deviceDetails.appVersion}`;
+		this.userAgent = deviceDetails.device === "DESKTOPWIN" ||
+				deviceDetails.device === "DESKTOPMAC"
+			? `DESKTOP:${deviceDetails.systemName}:${deviceDetails.systemVersion}(${deviceDetails.appVersion})`
+			: `Line/${deviceDetails.appVersion}`;
 		this.client = client;
 	}
 
@@ -125,6 +128,9 @@ export class RequestClient {
 		isReRequest: boolean = false,
 		timeout: number = this.client.config.timeout,
 	): Promise<ParsedThrift> {
+		if (path !== "/EXT/auth/tokenrefresh/v1" && this.client.authToken) {
+			await this.client.auth.refreshIfNeeded();
+		}
 		const protocol = Protocols[protocolType];
 
 		const headers = {
@@ -133,7 +139,6 @@ export class RequestClient {
 		};
 
 		this.client.log("writeThrift", {
-			value,
 			methodName,
 			protocolType,
 		});
@@ -148,9 +153,8 @@ export class RequestClient {
 			methodName,
 			path: `https://${this.endpoint}${path}`,
 			method: overrideMethod,
-			headers,
 			timeout,
-			body: Trequest,
+			requestBytes: Trequest.byteLength,
 		});
 
 		const request = new Request(`https://${this.endpoint}${path}`, {
@@ -168,15 +172,15 @@ export class RequestClient {
 			})
 			: await this.client.fetch(request);
 		const nextToken = response.headers.get("x-line-next-access");
-		if (nextToken) {
-			this.client.emit("update:authtoken", nextToken);
+		if (nextToken && path !== "/EXT/auth/tokenrefresh/v1") {
+			await this.client.auth.setAccessToken(nextToken);
 		}
 		const body = await response.arrayBuffer();
 		const parsedBody = new Uint8Array(body);
 		this.client.log("response", {
-			...response,
-			parsedBody,
 			methodName,
+			status: response.status,
+			responseBytes: parsedBody.byteLength,
 		});
 		let res: ParsedThrift;
 		let hasError = false;
@@ -184,9 +188,7 @@ export class RequestClient {
 			res = this.client.thrift.readThrift(parsedBody, protocol);
 		} catch {
 			throw new Error(
-				`Request internal failed: status=${response.status} ` +
-					`headers=${JSON.stringify([...response.headers.entries()])} ` +
-					`body=<${[...parsedBody].map((e) => e.toString(16)).join(" ")}>`,
+				`Request internal failed: status=${response.status} responseBytes=${parsedBody.byteLength}`,
 			);
 		}
 		if (!res.data[0] && Object.keys(res.data).length) {
@@ -232,7 +234,10 @@ export class RequestClient {
 		}
 
 		this.client.log("readThrift", {
-			res,
+			methodName,
+			protocolType,
+			hasError,
+			responseBytes: parsedBody.byteLength,
 		});
 
 		const isRefresh = Boolean(
@@ -240,6 +245,12 @@ export class RequestClient {
 				res.data.e.code === "MUST_REFRESH_V3_TOKEN" &&
 				await this.client.storage.get("refreshToken"),
 		);
+		if (
+			res.data.e?.code === "NOT_AUTHORIZED_DEVICE" && !isRefresh
+		) {
+			await this.client.auth.clearStoredSession();
+			this.client.emit("end", this.client.profile!);
+		}
 
 		if (res.data.e && !isRefresh) {
 			throw new InternalError(
@@ -250,10 +261,6 @@ export class RequestClient {
 			);
 		}
 		if (hasError && !isRefresh) {
-			if (res.data.e?.code === "NOT_AUTHORIZED_DEVICE") {
-				delete this.client.authToken;
-				this.client.emit("end", this.client.profile!);
-			}
 			throw new InternalError(
 				"RequestError",
 				`Request internal failed, ${methodName}(${path}) -> ` +
@@ -273,6 +280,14 @@ export class RequestClient {
 				overrideMethod,
 				parse,
 				true,
+				timeout,
+			);
+		}
+		if (isRefresh) {
+			throw new InternalError(
+				"RequestError",
+				`Request still requires a V3 token refresh after retry: ${methodName}(${path})`,
+				res.data.e,
 			);
 		}
 		return res;

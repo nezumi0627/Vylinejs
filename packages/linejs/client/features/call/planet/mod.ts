@@ -72,6 +72,9 @@ export {
 	type PlanetTransportOpts,
 } from "./transport.ts";
 
+export { type ConferenceMember, ConferenceState } from "./conference.ts";
+export { buildPdtp, parsePdtp, type PdtpPacket, PdtpReceiver } from "./pdtp.ts";
+
 // Ground-truth Cassini protobuf-c schema (reverse-engineered from the
 // .data.rel.ro descriptor objects in libandromeda).
 export {

@@ -10,7 +10,6 @@ import {
 	derivePlanetMediaKeyingVariants,
 	derivePlanetMediaKeys,
 	derivePlanetMediaStreamKeying,
-	type EphemeralKeypair,
 	generateEphemeralKeypair,
 	hmacTag,
 	tagEquals,
@@ -605,9 +604,7 @@ async function exerciseMediaCall(remoteRelease: boolean, ringing = false) {
 	const server = await bindUdpServer();
 	const mediaServer = await bindUdpServer();
 	const addr = server.address();
-	const mediaAddr = mediaServer.address();
 	const port = typeof addr === "string" ? 0 : addr.port;
-	const mediaPort = typeof mediaAddr === "string" ? 0 : mediaAddr.port;
 	const route = makeRoute(routePeer, port);
 	const transport = new PlanetTransport({
 		localMid: "u-local",
@@ -832,12 +829,15 @@ async function exerciseMediaCall(remoteRelease: boolean, ringing = false) {
 			connReqWireForRetry = connReqWire;
 			const infoReqWire = buildServerWire(serverKeys, infoReqPlain, 0x5103);
 			const mcDataReqWire = buildServerWire(serverKeys, mcDataReqPlain, 0x5104);
-			void sendUdp(server, setupRspWire, rinfo).then(() =>
-				new Promise((resolve) => setTimeout(resolve, 5))
-			).then(() => ringing ? undefined : sendUdp(server, connReqWire, rinfo))
-				.then(() => new Promise((resolve) => setTimeout(resolve, 5))).then(() =>
+			const interMessageDelay = () =>
+				ringing
+					? Promise.resolve()
+					: new Promise((resolve) => setTimeout(resolve, 5));
+			void sendUdp(server, setupRspWire, rinfo).then(interMessageDelay)
+				.then(() => ringing ? undefined : sendUdp(server, connReqWire, rinfo))
+				.then(interMessageDelay).then(() =>
 					ringing ? undefined : sendUdp(server, infoReqWire, rinfo)
-				).then(() => new Promise((resolve) => setTimeout(resolve, 5))).then(
+				).then(interMessageDelay).then(
 					() => ringing ? undefined : sendUdp(server, mcDataReqWire, rinfo),
 				);
 		} catch (e) {

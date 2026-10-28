@@ -176,3 +176,55 @@ Deno.test("_OnPushResponse still delivers events when fetchMyEvents succeeds", a
 		"[LEGY/PUSH] SQ_fetchMyEvents",
 	]);
 });
+
+Deno.test("push stream backpressures producers instead of growing without bound", async () => {
+	const manager = new ConnManager({ log() {} } as never);
+	const writer = manager.createAsyncReadableStream<number>();
+	for (let i = 0; i < 200; i++) await writer.enqueue(i);
+	let completed = false;
+	const blocked = writer.enqueue(200).then(() => completed = true);
+	await Promise.resolve();
+	assertEquals(completed, false);
+	const reader = writer.stream.getReader();
+	assertEquals((await reader.read()).value, 0);
+	await blocked;
+	assertEquals(completed, true);
+	reader.releaseLock();
+});
+
+Deno.test("push stream rejects blocked producers when it closes", async () => {
+	const manager = new ConnManager({ log() {} } as never);
+	let connectionClosed = false;
+	manager.conns = [{
+		close() {
+			connectionClosed = true;
+			return Promise.resolve();
+		},
+	} as never];
+	const writer = manager.createAsyncReadableStream<number>();
+	for (let i = 0; i < 200; i++) await writer.enqueue(i);
+	let settled = false;
+	const blocked = writer.enqueue(200).then(
+		() => settled = true,
+		() => settled = true,
+	);
+	writer.close();
+	assertEquals(connectionClosed, true);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assertEquals(settled, true);
+	await blocked;
+});
+
+Deno.test("push stream preserves queued events across reader cancellation", async () => {
+	const manager = new ConnManager({ log() {} } as never);
+	const writer = manager.createAsyncReadableStream<number>();
+	await writer.enqueue(1);
+	await writer.enqueue(2);
+	const firstReader = writer.stream.getReader();
+	await firstReader.cancel();
+	writer.renew();
+	const nextReader = writer.stream.getReader();
+	assertEquals(await nextReader.read(), { value: 1, done: false });
+	assertEquals(await nextReader.read(), { value: 2, done: false });
+	await nextReader.cancel();
+});

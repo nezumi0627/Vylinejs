@@ -9,6 +9,7 @@ import { InternalError } from "../../core/utils/error.ts";
 import type { BaseClient } from "../../core/mod.ts";
 import type { BaseService } from "../types.ts";
 import type { LooseType } from "@evex/loose-types";
+import { type LiffMessage, validateLiffMessages } from "./messages.ts";
 
 export class LiffService implements BaseService {
 	static readonly LINE_LIFF_ENDPOINT = "https://api.line.me/message/v3/share";
@@ -159,7 +160,8 @@ export class LiffService implements BaseService {
 	 */
 	public async sendLiff(options: {
 		to: string;
-		messages: { type: string; text?: string }[];
+		messages: LiffMessage[];
+		liffId?: string;
 		tryConsent?: boolean;
 		forceIssue?: boolean;
 	}): Promise<LooseType> {
@@ -167,21 +169,26 @@ export class LiffService implements BaseService {
 		const {
 			to,
 			messages,
+			liffId,
 			tryConsent,
 			forceIssue,
 		} = {
+			liffId: this.liffId,
 			tryConsent: true,
 			forceIssue: false,
 			...options,
 		};
-		if (!this.liffTokenCache[to] || forceIssue) {
+		validateLiffMessages(messages);
+		const cacheKey = JSON.stringify([liffId, to]);
+		if (!this.liffTokenCache[cacheKey] || forceIssue) {
 			token = await this.getLiffToken({
 				chatMid: to,
-				liffId: this.liffId,
+				liffId,
 				tryConsent,
 			});
+			this.liffTokenCache[cacheKey] = token;
 		} else {
-			token = this.liffTokenCache[to];
+			token = this.liffTokenCache[cacheKey];
 		}
 
 		const liffHeaders = {

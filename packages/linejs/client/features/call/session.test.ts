@@ -30,17 +30,31 @@ function fakeClient() {
 	};
 }
 
-function recordingTransport(): CallTransport & { sent: Uint8Array[]; closed: boolean } {
+function recordingTransport(): CallTransport & {
+	sent: Uint8Array[];
+	closed: boolean;
+} {
 	const sent: Uint8Array[] = [];
 	let closed = false;
 	const incoming: Uint8Array[] = [];
 	return {
 		sent,
-		get closed() { return closed; },
-		set closed(v) { closed = v; },
-		connect() { return Promise.resolve(); },
-		close() { closed = true; return Promise.resolve(); },
-		send(p) { sent.push(p); },
+		get closed() {
+			return closed;
+		},
+		set closed(v) {
+			closed = v;
+		},
+		connect() {
+			return Promise.resolve();
+		},
+		close() {
+			closed = true;
+			return Promise.resolve();
+		},
+		send(p) {
+			sent.push(p);
+		},
 		async *receive() {
 			for (const p of incoming) yield p;
 		},
@@ -95,10 +109,49 @@ Deno.test("CallSession.start → acquiring → connecting → in-call state tran
 
 Deno.test("CallSession.start is idempotent", async () => {
 	const { client } = fakeClient();
-	const session = new CallSession(client, { to: "u-p", transport: recordingTransport() });
+	const session = new CallSession(client, {
+		to: "u-p",
+		transport: recordingTransport(),
+	});
 	const r1 = await session.start();
 	const r2 = await session.start();
 	assertEquals(r1, r2);
+});
+
+Deno.test("CallSession closes transport when startup signaling fails", async () => {
+	const { client } = fakeClient();
+	const transport = recordingTransport();
+	transport.invite = () => Promise.reject(new Error("invite failed"));
+	const session = new CallSession(client, { to: "u-p", transport });
+
+	await assertRejects(() => session.start(), Error, "invite failed");
+
+	assertEquals(session.state, "failed");
+	assertEquals(transport.closed, true);
+});
+
+Deno.test("CallSession group startup does not wait for a one-to-one answer", async () => {
+	const { client, fakeRoute } = fakeClient();
+	let joined = false;
+	const transport = {
+		...recordingTransport(),
+		joinGroup() {
+			joined = true;
+			return Promise.resolve();
+		},
+		receiveAudio: async function* () {},
+		waitForAnswer() {
+			throw new Error("group calls do not use the one-to-one answer handshake");
+		},
+	};
+	const session = new CallSession(client, {
+		to: "room",
+		group: { route: fakeRoute as never },
+		transport,
+	});
+	await session.start();
+	assertEquals(joined, true);
+	assertEquals(session.state, "in-call");
 });
 
 Deno.test("CallSession.sendStream pumps PCM through codec → transport", async () => {
@@ -120,11 +173,47 @@ Deno.test("CallSession.sendStream pumps PCM through codec → transport", async 
 	assertEquals(dv.getInt16(4, false), 42);
 });
 
+Deno.test("CallSession.sendStream removes merged abort listeners when complete", async () => {
+	const { client } = fakeClient();
+	const session = new CallSession(client, {
+		to: "u-p",
+		transport: recordingTransport(),
+		codecs: passthroughCodecs(),
+	});
+	await session.start();
+	let added = 0;
+	let removed = 0;
+	const signal = {
+		aborted: false,
+		addEventListener() {
+			added++;
+		},
+		removeEventListener() {
+			removed++;
+		},
+	} as unknown as AbortSignal;
+	const source = {
+		async *frames() {
+			yield { samples: new Int16Array(0), sampleRate: 48000, channels: 1 };
+		},
+	};
+
+	await session.sendStream(source, { signal });
+	assertEquals(added, 1);
+	assertEquals(removed, 1);
+});
+
 Deno.test("CallSession.sendStream rejects when not in-call", async () => {
 	const { client } = fakeClient();
-	const session = new CallSession(client, { to: "u-p", transport: recordingTransport() });
+	const session = new CallSession(client, {
+		to: "u-p",
+		transport: recordingTransport(),
+	});
 	await assertRejects(
-		() => session.sendStream(bufferSource({ samples: new Int16Array(0), sampleRate: 48000 })),
+		() =>
+			session.sendStream(
+				bufferSource({ samples: new Int16Array(0), sampleRate: 48000 }),
+			),
 		Error,
 		"not in-call",
 	);
@@ -134,8 +223,12 @@ Deno.test("CallSession.received yields decoded peer PCM frames", async () => {
 	const { client } = fakeClient();
 	// Build a transport that emits 3 fake packets
 	const transport: CallTransport = {
-		connect() { return Promise.resolve(); },
-		close() { return Promise.resolve(); },
+		connect() {
+			return Promise.resolve();
+		},
+		close() {
+			return Promise.resolve();
+		},
 		send() {},
 		async *receive() {
 			for (const v of [10, 20, 30]) {
@@ -160,8 +253,12 @@ Deno.test("CallSession.received yields decoded peer PCM frames", async () => {
 Deno.test("CallSession.receiveInto pipes to AudioSink + closes on stream end", async () => {
 	const { client } = fakeClient();
 	const transport: CallTransport = {
-		connect() { return Promise.resolve(); },
-		close() { return Promise.resolve(); },
+		connect() {
+			return Promise.resolve();
+		},
+		close() {
+			return Promise.resolve();
+		},
 		send() {},
 		async *receive() {
 			const buf = new Uint8Array(8);
@@ -202,7 +299,11 @@ Deno.test("stub transport throws on connect", async () => {
 	const session = new CallSession(client, { to: "u-p" }); // no transport
 	const errors: Error[] = [];
 	session.on("error", (e) => errors.push(e));
-	await assertRejects(() => session.start(), Error, "CallTransport not configured");
+	await assertRejects(
+		() => session.start(),
+		Error,
+		"CallTransport not configured",
+	);
 	assertEquals(session.state, "failed");
 	assertEquals(errors.length, 1);
 });

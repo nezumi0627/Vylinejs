@@ -5,7 +5,7 @@
 
 import type { FetchLike } from "../base/mod.ts";
 import type { Device } from "../base/mod.ts";
-import { BaseClient } from "../base/mod.ts";
+import { BaseClient, InternalError } from "../base/mod.ts";
 import type { BaseStorage } from "../base/storage/mod.ts";
 import {
 	type AuthTokenInput,
@@ -80,7 +80,7 @@ export const loginWithQR = async (
 export interface WithPasswordOptions {
 	email: string;
 	password: string;
-	/** @default 114514 */
+	/** Random six-digit PIN by default. */
 	pincode?: string;
 
 	onPincodeRequest(pin: string): void | Promise<void>;
@@ -106,12 +106,21 @@ export const loginWithAuthToken = async (
 ): Promise<Client> => {
 	const base = createBaseClient(init);
 	const credential = parseAuthTokenInput(authToken);
-	base.authToken = credential.accessToken;
-	if (credential.refreshToken) {
-		await base.storage.set("refreshToken", credential.refreshToken);
-	}
-	if (credential.expire !== undefined) {
-		await base.storage.set("expire", credential.expire);
+	await base.auth.saveAuthTokenCredential(credential);
+	await base.loginProcess.ready();
+	return new Client(base);
+};
+
+/** Restore a session saved in the supplied storage, refreshing it when near expiry. */
+export const loginWithStoredAuthToken = async (
+	init: InitOptions,
+): Promise<Client> => {
+	const base = createBaseClient(init);
+	if (!await base.auth.restoreStoredSession()) {
+		throw new InternalError(
+			"NoStoredAuthToken",
+			"No saved LINE session found in storage",
+		);
 	}
 	await base.loginProcess.ready();
 	return new Client(base);

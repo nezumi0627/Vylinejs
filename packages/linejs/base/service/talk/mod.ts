@@ -282,13 +282,13 @@ export class TalkService implements BaseService {
 		);
 		const nextToken = response.headers.get("x-line-next-access");
 		if (nextToken) {
-			this.client.emit("update:authtoken", nextToken);
+			await this.client.auth.setAccessToken(nextToken);
 		}
 		const parsedBody = new Uint8Array(await response.arrayBuffer());
 		this.client.log("compactMessageResponse", {
 			path,
 			status: response.status,
-			body: parsedBody,
+			responseBytes: parsedBody.byteLength,
 		});
 		if (!response.ok) {
 			throw new InternalError(

@@ -10,9 +10,16 @@ export interface SyncData {
 	};
 }
 
-function sleep(time: number) {
+function sleep(time: number, signal?: AbortSignal): Promise<void> {
+	if (signal?.aborted) return Promise.resolve();
 	return new Promise<void>((resolve) => {
-		setTimeout(resolve, time);
+		const finish = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", finish);
+			resolve();
+		};
+		const timer = setTimeout(finish, time);
+		signal?.addEventListener("abort", finish, { once: true });
 	});
 }
 
@@ -149,13 +156,13 @@ export class Polling {
 		}
 	}
 
-	async initLegyPusher(cb?: () => void) {
+	async initLegyPusher(cb?: () => void, signal?: AbortSignal) {
 		if (this.islisten) {
 			cb && cb();
 			return;
 		}
 		try {
-			while (this.client.authToken) {
+			while (this.client.authToken && !signal?.aborted) {
 				this.islisten = true;
 				try {
 					await this.client.push.initializeConn(1, this.listenTarget);
@@ -166,10 +173,11 @@ export class Polling {
 				try {
 					cb && cb();
 					await this.client.push.InitAndRead(this.listenTarget);
-					await sleep(4000);
+					await sleep(4000, signal);
 				} catch (error) {
+					if (signal?.aborted) break;
 					this.#reportFailure("LegyPusherError", error);
-					await sleep(4000);
+					await sleep(4000, signal);
 				}
 			}
 		} finally {
@@ -190,8 +198,8 @@ export class Polling {
 	// one — used to surface as an unhandled rejection and take the host process
 	// down. Terminate both shared streams with the original error so pending
 	// readers can observe failure, then report it. A new listen call may retry.
-	#startLegyPusher(): void {
-		this.initLegyPusher().catch((error) => {
+	#startLegyPusher(signal?: AbortSignal): void {
+		this.initLegyPusher(undefined, signal).catch((error) => {
 			for (
 				const stream of [this.client.push.opStream, this.client.push.sqStream]
 			) {
@@ -205,15 +213,19 @@ export class Polling {
 		});
 	}
 
-	listenSquareEvents(): ReadableStream<SquareEvent> {
+	listenSquareEvents(
+		options: { signal?: AbortSignal } = {},
+	): ReadableStream<SquareEvent> {
 		this.client.push.sqStream.renew();
-		this.#startLegyPusher();
+		this.#startLegyPusher(options.signal);
 		return this.client.push.sqStream.stream;
 	}
 
-	listenTalkEvents(): ReadableStream<Operation> {
+	listenTalkEvents(
+		options: { signal?: AbortSignal } = {},
+	): ReadableStream<Operation> {
 		this.client.push.opStream.renew();
-		this.#startLegyPusher();
+		this.#startLegyPusher(options.signal);
 		return this.client.push.opStream.stream;
 	}
 }

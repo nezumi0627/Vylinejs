@@ -1,3 +1,4 @@
+// Group conference / SVC schema helpers adapted from tqmane/vyline-api; terms: docs/licenses/tqmane-vyline-api-MIT.txt.
 /**
  * Cassini / PLANET protobuf schema.
  *
@@ -19,8 +20,6 @@
  *         cc_rel_req        …
  *         (and so on)
  */
-
-import { Buffer } from "node:buffer";
 
 // ─── varint + wire-type encoding ────────────────────────────────────────
 
@@ -67,14 +66,6 @@ function readFixed64(buf: Uint8Array, off: number): bigint {
 	let v = 0n;
 	for (let i = 7; i >= 0; i--) v = (v << 8n) | BigInt(buf[off + i]);
 	return v;
-}
-function fixed32(v: number): Uint8Array {
-	const o = new Uint8Array(4);
-	o[0] = v & 0xff;
-	o[1] = (v >>> 8) & 0xff;
-	o[2] = (v >>> 16) & 0xff;
-	o[3] = (v >>> 24) & 0xff;
-	return o;
 }
 function float32(v: number): Uint8Array {
 	const o = new Uint8Array(4);
@@ -287,7 +278,6 @@ function packOfferCodec(
 }
 
 function packAudioVideoOffer(
-	name: "A" | "V",
 	codec: Uint8Array,
 	path: Uint8Array,
 	rtpPort: number,
@@ -332,20 +322,23 @@ function packDataOffer(codec: Uint8Array, path: Uint8Array): Uint8Array {
  */
 export function packNativeSetupOffer(
 	material: PlanetSetupOfferMaterial,
+	initialVideo = false,
 ): Uint8Array {
-	return packNativeOneToOneOffer(material, false);
+	return packNativeOneToOneOffer(material, false, initialVideo);
 }
 
 /** Callee audio answer: local stream IDs, disabled video, E2EE only. */
 export function packNativeAnswer(
 	material: PlanetSetupOfferMaterial,
+	initialVideo = false,
 ): Uint8Array {
-	return packNativeOneToOneOffer(material, true);
+	return packNativeOneToOneOffer(material, true, initialVideo);
 }
 
 function packNativeOneToOneOffer(
 	material: PlanetSetupOfferMaterial,
 	answer: boolean,
+	initialVideo = false,
 ): Uint8Array {
 	if (material.mediaPubKey.length !== 33) {
 		throw new Error("packNativeSetupOffer: mediaPubKey must be 33 bytes");
@@ -379,16 +372,14 @@ function packNativeOneToOneOffer(
 		13601 + delta,
 	);
 	const audio = packAudioVideoOffer(
-		"A",
 		packOfferCodec("A", { enabled: 1, bitrate: 32, kind: 1 }),
 		audioPath,
 		101 + delta,
 		201 + delta,
 	);
 	const video = packAudioVideoOffer(
-		"V",
 		packOfferCodec("V", {
-			enabled: 0,
+			enabled: initialVideo ? 1 : 0,
 			bitrate: 800,
 			fps: answer ? 10 : 24,
 			profile: answer ? 1 : 2,
@@ -479,12 +470,13 @@ export interface PlanetGroupParticipateOfferMaterial {
 }
 
 /** Pack the native group-call participate offer shape observed in LINE Android
- * 26.6.2. Group calls carry audio, disabled video, and data records, plus the
- * shared media secret. Unlike 1:1 SETUP, the captured group offer does not
- * include a per-offer media public key/key-id/nonce block.
+ * 26.6.2. Group calls carry audio, video (disabled unless requested), and data
+ * records, plus the shared media secret. Unlike 1:1 SETUP, the captured group
+ * offer does not include a per-offer media public key/key-id/nonce block.
  */
 export function packNativeGroupParticipateOffer(
 	material: PlanetGroupParticipateOfferMaterial,
+	initialVideo = false,
 ): Uint8Array {
 	if (material.mediaSecret.length !== 30) {
 		throw new Error(
@@ -495,7 +487,6 @@ export function packNativeGroupParticipateOffer(
 	const videoPath = packOfferPath(97, 113, 213, 6803, 13603);
 	const dataPath = packOfferPath(98, 123, 223, 6803, 13603);
 	const audio = packAudioVideoOffer(
-		"A",
 		packOfferCodec("A", { enabled: 1, bitrate: 32, kind: 1 }),
 		audioPath,
 		103,
@@ -504,14 +495,13 @@ export function packNativeGroupParticipateOffer(
 	const videoCodec: Buf = { bytes: [] };
 	emitBytes(videoCodec, 1, new TextEncoder().encode("V"));
 	emitUint32(videoCodec, 2, 3);
-	emitUint32(videoCodec, 3, 0);
+	emitUint32(videoCodec, 3, initialVideo ? 1 : 0);
 	emitUint32(videoCodec, 4, 800);
 	emitUint32(videoCodec, 5, 15);
 	emitUint32(videoCodec, 6, 2);
 	emitUint32(videoCodec, 50, 7);
 	emitUint32(videoCodec, 50, 4);
 	const video = packAudioVideoOffer(
-		"V",
 		finalize(videoCodec),
 		videoPath,
 		113,
@@ -884,6 +874,52 @@ export function decodeCcRelReq(bytes: Uint8Array): CcRelReq {
 		roomDestroy: asBoolField(fields, 51),
 		devId: asStringField(fields, 101),
 	};
+}
+
+/** PUSH_REQ carries a conference_info snapshot or partial update. */
+export function decodeCcPushReq(bytes: Uint8Array): {
+	contentsType?: number;
+	contents?: Uint8Array;
+	compContentsType?: number;
+} {
+	const fields = decodeFields(bytes);
+	return {
+		contentsType: asNumberField(fields, 1),
+		contents: asBytesField(fields, 2),
+		compContentsType: asNumberField(fields, 3),
+	};
+}
+
+export function packMcStrmReq(
+	sequence: number,
+	requests: Array<{ ssrc: number; channel: number; start: boolean }>,
+): Uint8Array {
+	if (
+		requests.length > 60 ||
+		[
+			sequence,
+			...requests.flatMap((request) => [request.ssrc, request.channel]),
+		]
+			.some((value) =>
+				!Number.isInteger(value) || value < 0 || value > 0xffffffff
+			)
+	) throw new Error("Invalid video stream request");
+	const body: Buf = { bytes: [] };
+	for (const request of requests) {
+		const entry: Buf = { bytes: [] };
+		const layer: Buf = { bytes: [] };
+		emitEnum(entry, 1, request.start ? 1 : 0);
+		emitUint32(entry, 3, request.ssrc);
+		emitEnum(entry, 5, request.start ? 1 : 0);
+		emitEnum(entry, 6, 1);
+		emitUint32(entry, 7, request.channel);
+		emitEnum(layer, 1, 2);
+		emitEnum(layer, 2, 0);
+		emitMessage(entry, 8, finalize(layer));
+		emitMessage(body, 1, finalize(entry));
+	}
+	emitUint32(body, 2, sequence);
+	return finalize(body);
 }
 
 // ─── planet_mc_msg / mc_data_req — group media-control bootstrap ───────
@@ -1911,6 +1947,8 @@ export interface NativeSetupMediaRecord {
 	enabled?: number;
 	bitrate?: number;
 	kind?: number;
+	kinds?: number[];
+	features?: Array<{ id?: number; version?: number }>;
 	rtpId?: number;
 	rtpPort?: number;
 	rtcpId?: number;
@@ -1943,6 +1981,18 @@ export function decodeNativeSetupOffer(bytes: Uint8Array): NativeSetupOffer {
 				enabled: asNumberField(codec, 3),
 				bitrate: asNumberField(codec, 4),
 				kind: asNumberField(codec, 50),
+				kinds: repeatedNumbers(codec, 50),
+				features: item
+					.filter((field) =>
+						field.tag === 51 && field.value instanceof Uint8Array
+					)
+					.map((field) => {
+						const feature = decodeFields(field.value as Uint8Array);
+						return {
+							id: asNumberField(feature, 1),
+							version: asNumberField(feature, 2),
+						};
+					}),
 				rtpId: asNumberField(path, 1),
 				rtpPort: asNumberField(path, 11),
 				rtcpId: asNumberField(path, 61),
@@ -1972,3 +2022,4 @@ export function decodeNativeSetupOffer(bytes: Uint8Array): NativeSetupOffer {
 	}
 	return decoded;
 }
+// Group conference / SVC schema helpers adapted from tqmane/vyline-api; terms: docs/licenses/tqmane-vyline-api-MIT.txt.

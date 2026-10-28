@@ -68,7 +68,12 @@ export interface AgentIOptions {
 	 *  service expects.  Override if you're driving Agent I from a
 	 *  different platform fixture. */
 	userAgent?: string;
+	/** Maximum conversation messages retained for the next request; defaults to 40. */
+	maxHistoryMessages?: number;
 }
+
+const MAX_SSE_EVENT_BYTES = 1_048_576;
+const MAX_AGENT_TEXT_BYTES = 1_048_576;
 
 /** Single SSE chunk yielded by {@link AgentIClient.chat}.  The exact
  *  field set depends on what Yahoo's stream emits per event; the most
@@ -103,15 +108,23 @@ function randomId32(): string {
 export class AgentIClient {
 	#opts:
 		& Required<
-			Omit<AgentIOptions, "fetch" | "userAgent">
+			Omit<AgentIOptions, "fetch" | "userAgent" | "maxHistoryMessages">
 		>
 		& { fetch: typeof fetch; userAgent: string };
 	/** Conversation `chats` accumulator — Agent I expects every turn to
 	 *  echo the prior turns.  Reset via {@link reset}. */
 	#history: ChatMessage[] = [];
+	#maxHistoryMessages: number;
 
 	constructor(opts: AgentIOptions = {}) {
 		const lineVersion = opts.lineVersion ?? "26.7.2";
+		this.#maxHistoryMessages = opts.maxHistoryMessages ?? 40;
+		if (
+			!Number.isSafeInteger(this.#maxHistoryMessages) ||
+			this.#maxHistoryMessages < 2
+		) {
+			throw new RangeError("maxHistoryMessages must be an integer >= 2");
+		}
 		this.#opts = {
 			cookie: opts.cookie ?? "",
 			lineVersion,
@@ -131,12 +144,19 @@ export class AgentIClient {
 		userText: string,
 		extra?: { logid?: string; qId?: string },
 	): AsyncGenerator<AgentIChunk> {
+		if (
+			userText.length > MAX_AGENT_TEXT_BYTES ||
+			new TextEncoder().encode(userText).byteLength > MAX_AGENT_TEXT_BYTES
+		) {
+			throw new RangeError("Agent I user message exceeds 1 MiB");
+		}
 		const turn: ChatMessage = {
 			id: randomId32(),
 			role: "user",
 			contents: [{ type: "text", text: userText }],
 		};
 		this.#history.push(turn);
+		this.#trimHistory();
 
 		const body = {
 			chats: this.#history,
@@ -188,8 +208,16 @@ export class AgentIClient {
 		// Accumulate the assistant's reply text so we can append it to
 		// history after the stream closes.
 		const assistantText: string[] = [];
+		let assistantTextBytes = 0;
+		const textEncoder = new TextEncoder();
 		for await (const chunk of parseSseStream(res.body)) {
-			if (chunk.text) assistantText.push(chunk.text);
+			if (chunk.text) {
+				assistantTextBytes += textEncoder.encode(chunk.text).byteLength;
+				if (assistantTextBytes > MAX_AGENT_TEXT_BYTES) {
+					throw new Error("Agent I reply exceeds 1 MiB");
+				}
+				assistantText.push(chunk.text);
+			}
 			yield chunk;
 		}
 		if (assistantText.length) {
@@ -198,7 +226,13 @@ export class AgentIClient {
 				role: "assistant",
 				contents: [{ type: "text", text: assistantText.join("") }],
 			});
+			this.#trimHistory();
 		}
+	}
+
+	#trimHistory(): void {
+		const excess = this.#history.length - this.#maxHistoryMessages;
+		if (excess > 0) this.#history.splice(0, excess);
 	}
 
 	/** Mints anonymous Yahoo `B`/`XB` cookies via the same GET LINE's WebView does. */
@@ -239,25 +273,51 @@ async function* parseSseStream(
 		.pipeThrough(new TextDecoderStream())
 		.getReader();
 	let buffer = "";
+	let bufferBytes = 0;
+	let scanFrom = 0;
+	let complete = false;
+	const encoder = new TextEncoder();
 	try {
 		while (true) {
 			const { value, done } = await reader.read();
-			if (done) break;
+			if (done) {
+				complete = true;
+				break;
+			}
 			buffer += value;
+			bufferBytes += encoder.encode(value).byteLength;
 			let idx: number;
 			// SSE event boundary is a blank line ("\n\n").
-			while ((idx = buffer.indexOf("\n\n")) !== -1) {
+			while ((idx = buffer.indexOf("\n\n", scanFrom)) !== -1) {
 				const raw = buffer.slice(0, idx);
 				buffer = buffer.slice(idx + 2);
+				const eventBytes = encoder.encode(raw).byteLength;
+				if (eventBytes > MAX_SSE_EVENT_BYTES) {
+					throw new Error("Agent I SSE event exceeds 1 MiB");
+				}
+				bufferBytes -= eventBytes + 2;
+				scanFrom = 0;
 				const event = parseSseEvent(raw);
 				if (event) yield event;
 			}
+			scanFrom = Math.max(0, buffer.length - 1);
+			if (bufferBytes > MAX_SSE_EVENT_BYTES) {
+				throw new Error("Agent I SSE event exceeds 1 MiB");
+			}
 		}
 		if (buffer.trim().length) {
+			if (bufferBytes > MAX_SSE_EVENT_BYTES) {
+				throw new Error("Agent I SSE event exceeds 1 MiB");
+			}
 			const event = parseSseEvent(buffer);
 			if (event) yield event;
 		}
 	} finally {
+		if (!complete) {
+			try {
+				await reader.cancel();
+			} catch { /* stream may already be errored */ }
+		}
 		reader.releaseLock();
 	}
 }

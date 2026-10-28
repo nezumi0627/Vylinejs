@@ -1,49 +1,40 @@
 // High-level LIFF adapter on top of base/service/liff/mod.ts.
 import type { Client } from "../mod.ts";
-
-export type LiffMessage =
-	| LiffTextMessage
-	| LiffStickerMessage
-	| LiffImageMessage
-	| LiffFlexMessage
-	| LiffTemplateMessage
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	| Record<string, any>;
-
-export interface LiffTextMessage {
-	type: "text";
-	text: string;
-	sentBy?: { label: string; iconUrl: string; linkUrl?: string };
-}
-export interface LiffStickerMessage {
-	type: "sticker";
-	packageId: string;
-	stickerId: string;
-}
-export interface LiffImageMessage {
-	type: "image";
-	originalContentUrl: string;
-	previewImageUrl: string;
-}
-export interface LiffFlexMessage {
-	type: "flex";
-	altText: string;
-	contents: Record<string, unknown>;
-}
-export interface LiffTemplateMessage {
-	type: "template";
-	altText: string;
-	template: Record<string, unknown>;
-}
+import type {
+	LiffAudioMessage,
+	LiffFlexMessage,
+	LiffImageMessage,
+	LiffLocationMessage,
+	LiffMessage,
+	LiffStickerMessage,
+	LiffTextMessage,
+	LiffVideoMessage,
+} from "../../base/service/liff/messages.ts";
+export type {
+	LiffAudioMessage,
+	LiffFlexMessage,
+	LiffImageMessage,
+	LiffLocationMessage,
+	LiffMessage,
+	LiffStickerMessage,
+	LiffTemplateMessage,
+	LiffTextMessage,
+	LiffVideoMessage,
+} from "../../base/service/liff/messages.ts";
 
 export function text(
 	body: string,
 	sentBy?: LiffTextMessage["sentBy"],
 ): LiffTextMessage {
-	return sentBy ? { type: "text", text: body, sentBy } : { type: "text", text: body };
+	return sentBy
+		? { type: "text", text: body, sentBy }
+		: { type: "text", text: body };
 }
 
-export function sticker(packageId: string, stickerId: string): LiffStickerMessage {
+export function sticker(
+	packageId: string,
+	stickerId: string,
+): LiffStickerMessage {
 	return { type: "sticker", packageId, stickerId };
 }
 
@@ -52,6 +43,29 @@ export function image(
 	previewImageUrl: string = originalContentUrl,
 ): LiffImageMessage {
 	return { type: "image", originalContentUrl, previewImageUrl };
+}
+
+export function video(
+	originalContentUrl: string,
+	previewImageUrl: string,
+): LiffVideoMessage {
+	return { type: "video", originalContentUrl, previewImageUrl };
+}
+
+export function audio(
+	originalContentUrl: string,
+	duration: number,
+): LiffAudioMessage {
+	return { type: "audio", originalContentUrl, duration };
+}
+
+export function location(
+	title: string,
+	address: string,
+	latitude: number,
+	longitude: number,
+): LiffLocationMessage {
+	return { type: "location", title, address, latitude, longitude };
 }
 
 export function flex(
@@ -64,7 +78,9 @@ export function flex(
 export interface LiffClient {
 	readonly defaultLiffId: string;
 	setDefaultLiffId(liffId: string): void;
-	getToken(opts: { chatMid?: string; liffId?: string; lang?: string }): Promise<string>;
+	getToken(
+		opts: { chatMid?: string; liffId?: string; lang?: string },
+	): Promise<string>;
 	issueView(opts: {
 		chatMid?: string;
 		liffId?: string;
@@ -133,7 +149,8 @@ class ClientLiff implements LiffClient {
 	) {
 		return await this.#client.base.liff.sendLiff({
 			to,
-			messages: messages as never,
+			messages,
+			liffId: opts.liffId ?? this.#liffId,
 			forceIssue: opts.forceIssue,
 		});
 	}
