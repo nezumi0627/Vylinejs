@@ -2,13 +2,20 @@ import { assertEquals } from "@std/assert";
 import { AuthService } from "./mod.ts";
 
 function makeStubClient(rotated: boolean) {
+	let onEnd = () => {};
 	const store = new Map<string, string>([
 		["refreshToken", "rt-old"],
 	]);
 	return {
 		store,
+		end() {
+			onEnd();
+		},
 		client: {
 			authToken: "authtoken",
+			on(_event: string, callback: () => void) {
+				onEnd = callback;
+			},
 			emit() {},
 			storage: {
 				get(k: string) {
@@ -44,6 +51,7 @@ Deno.test("tryRefreshToken persists a rotated refreshToken", async () => {
 
 	assertEquals(stub.store.get("refreshToken"), "rt-new");
 	assertEquals(String(stub.store.get("expire")), "4600");
+	stub.end();
 });
 
 Deno.test("tryRefreshToken keeps the stored refreshToken when not rotated", async () => {
@@ -53,4 +61,35 @@ Deno.test("tryRefreshToken keeps the stored refreshToken when not rotated", asyn
 	await auth.tryRefreshToken();
 
 	assertEquals(stub.store.get("refreshToken"), "rt-old");
+	stub.end();
+});
+
+Deno.test("refresh scheduling backs off when credential storage keeps failing", async () => {
+	let reads = 0;
+	let onEnd = () => {};
+	const auth = new AuthService({
+		authToken: "access",
+		disabled: false,
+		on(_event: string, callback: () => void) {
+			onEnd = callback;
+		},
+		emit() {},
+		storage: {
+			get() {
+				reads++;
+				return Promise.reject(new Error("storage unavailable"));
+			},
+			set() {
+				return Promise.resolve();
+			},
+			delete() {
+				return Promise.resolve();
+			},
+		},
+	} as never);
+
+	await auth.saveAuthTokenCredential({ accessToken: "access" });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assertEquals(reads, 2);
+	onEnd();
 });

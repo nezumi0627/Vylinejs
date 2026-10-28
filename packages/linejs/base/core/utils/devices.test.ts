@@ -28,15 +28,15 @@ Deno.test("getDeviceDetails returns current default app profiles", () => {
 	});
 	assertEquals(getDeviceDetails("IOS"), {
 		device: "IOS",
-		appVersion: "26.7.2",
+		appVersion: "26.12.1",
 		systemName: "iOS",
-		systemVersion: "18.0",
+		systemVersion: "26.1",
 	});
 	assertEquals(getDeviceDetails("IOSIPAD"), {
 		device: "IOSIPAD",
-		appVersion: "26.7.2",
+		appVersion: "26.12.1",
 		systemName: "iOS",
-		systemVersion: "18.0",
+		systemVersion: "26.1",
 	});
 	assertEquals(getDeviceDetails("WATCHOS"), {
 		device: "WATCHOS",

@@ -24,7 +24,9 @@ const client = await loginWithPassword({
 })
 ```
 
-email and password are required. On first login, you have to enter pincode on mobile app for enable e2ee.
+email and password are required. If you omit `pincode`, LINEJS generates a random
+six-digit PIN for the E2EE login handshake. On first login, enter that PIN in
+the LINE app to enable E2EE.
 `onPincodeRequest` can receive a pincode and you can output it with that method to tell users pincode.
 
 ### `loginWithQR`
@@ -60,52 +62,44 @@ const client = await loginWithAuthToken("YOUR_AUTH_TOKEN", {
 });
 ```
 
-### Persisting authToken across sessions
+### Save and restore a session
 
-`FileStorage` automatically persists things like `cert`, `refreshToken` and
-`expire`, but **the `authToken` itself is not one of them** — you need to save
-it yourself if you want to reuse it on the next run. LINEJS emits an
-`update:authtoken` events when tokens are issued or refreshed. Attach the
-listener **before login**, since login itself can rotate the token:
+The supplied storage persists `accessToken`, `refreshToken`, and `expire`.
+Refresh tokens are rotated and saved when LINE returns a new one. Each
+authenticated API request checks the server supplied deadline and refreshes
+when it is within 60 seconds; `loginWithStoredAuthToken` does this before
+loading the profile. Requests also retry once when LINE reports that a token
+must refresh. A background timer also refreshes before expiry while the client
+is idle; failures are retried after five minutes.
 
 ```ts
-import { Client } from "@evex/linejs";
-import { BaseClient } from "@evex/linejs/base";
+import { loginWithPassword, loginWithStoredAuthToken } from "@evex/linejs";
 import { FileStorage } from "@evex/linejs/storage";
 
 const storage = new FileStorage("./session.json");
-const TOKEN_KEY = "userAuthToken";
-const base = new BaseClient({ device: "IOSIPAD", storage });
+const init = { device: "IOSIPAD" as const, storage };
 
-// Event listeners are not awaited by the emitter. Queue writes in order and
-// handle failures without creating an unhandled rejection.
-let pendingSave = Promise.resolve();
-base.on("update:authtoken", (token) => {
-  base.authToken = token;
-  pendingSave = pendingSave.then(() => storage.set(TOKEN_KEY, token)).catch(() => {
-    console.error("Could not persist the LINE session token.");
-  });
-});
-base.on("pincall", (pin) => console.log("Enter this pincode:", pin));
-
-const saved = await storage.get(TOKEN_KEY);
-
-await base.loginProcess.login(typeof saved === "string" && saved
-  ? { authToken: saved }
-  : {
+const client = await (async () => {
+  if (await storage.get("accessToken") || await storage.get("refreshToken")) {
+    return await loginWithStoredAuthToken(init);
+  }
+  return await loginWithPassword({
     email: "you@example.com",
     password: "password",
-  });
-await pendingSave;
-const client = new Client(base);
-// Use client here. Also await pendingSave before an explicit process exit.
+    onPincodeRequest(pin) {
+      console.log("Enter this pincode in LINE:", pin);
+    },
+  }, init);
+})();
+// Use client here.
 ```
 
-The first run uses email + password (and PIN); later runs attempt to reuse the
-saved token. Expired or revoked credentials can still require manual login.
-Do not automatically loop password logins on every error.
+If LINE rejects a revoked credential, sign in interactively again. Password
+login does not run automatically after a restore failure. A fresh password
+login can replace the stored credentials even when the previous refresh token
+is expired or revoked.
 
-`session.json` contains plaintext credentials and E2EE key material. Exclude it
-from version control, restrict file access to your user, and do not log or share
-its contents. Load your password from a private configuration or environment
-variable rather than committing it. Token reuse does not guarantee account safety.
+`session.json` contains plaintext access and refresh tokens plus E2EE key
+material. Exclude it from version control, restrict file access to your user,
+and do not log or share its contents. Load your password from private
+configuration or an environment variable rather than committing it.

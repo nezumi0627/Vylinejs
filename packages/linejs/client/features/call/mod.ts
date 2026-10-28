@@ -4,7 +4,11 @@ import type * as LINETypes from "@evex/linejs-types";
 import type { DeviceDetails } from "../../../base/mod.ts";
 import type { CodecFactory } from "./audio.ts";
 import { defaultCodecFactory } from "./audio.ts";
-import { type IncomingAudioCall, parseIncomingAudioCall } from "./incoming.ts";
+import {
+	type IncomingAudioCall,
+	type IncomingPlanetCall,
+	parseIncomingPlanetCall,
+} from "./incoming.ts";
 import {
 	type PlanetIncomingIdentity,
 	PlanetTransport,
@@ -12,7 +16,9 @@ import {
 export {
 	type IncomingAudioCall,
 	type IncomingCallRoute,
+	type IncomingPlanetCall,
 	parseIncomingAudioCall,
+	parseIncomingPlanetCall,
 } from "./incoming.ts";
 export type { PlanetIncomingIdentity } from "./planet/transport.ts";
 
@@ -22,11 +28,7 @@ export interface AnswerIncomingOptions {
 	signal?: AbortSignal;
 	timeoutMs?: number;
 }
-import {
-	CallSession,
-	type CallSessionOpts,
-	type CallTransport,
-} from "./session.ts";
+import { CallSession, type CallSessionOpts } from "./session.ts";
 
 export type {
 	CallSession,
@@ -36,23 +38,43 @@ export type {
 	CallTransport,
 } from "./session.ts";
 export {
+	AudioActivityDetector,
 	type AudioDecoder,
 	type AudioEncoder,
 	type AudioSink,
 	type AudioSource,
 	bufferSink,
 	bufferSource,
+	type CallAudioPacket,
 	type CodecFactory,
 	decodeWavSync,
 	defaultCodecFactory,
 	type FileDecoder,
 	type NativeGroupOpusPacketizeOptions,
 	packetizeNativeGroupOpusPairs,
+	pcmAudioLevel,
 	type PcmFrame,
 	resampleLinear,
 	streamSink,
 	streamSource,
 } from "./audio.ts";
+export { GroupAudioMixer } from "./groupAudio.ts";
+export { type ConferenceMember, ConferenceState } from "./planet/conference.ts";
+export {
+	buildPdtp,
+	parsePdtp,
+	type PdtpPacket,
+	PdtpReceiver,
+} from "./planet/pdtp.ts";
+export {
+	type EncodedVideoFrame,
+	Evs3Assembler,
+	MAX_VIDEO_FRAME_BYTES,
+	packetizeEvs3,
+	parseEvs3,
+	validateVp8,
+} from "./planet/evs3.ts";
+export { packetizeSvcVp8, parseSvcVfd, unwrapSvcVp8 } from "./planet/svc.ts";
 export { stubTransport } from "./session.ts";
 export {
 	AndromedaTransport,
@@ -321,8 +343,8 @@ class ClientCall implements CallClient {
 		) throw new Error("incoming timeout must be positive and finite");
 		const localMid = this.#client.base.profile?.mid ?? "";
 		// Reparse raw input rather than trusting application-mutated event aliases.
-		const incoming = parseIncomingAudioCall(event.raw, localMid);
-		if (!incoming) throw new Error("unsupported incoming audio operation");
+		const incoming = parseIncomingPlanetCall(event.raw, localMid);
+		if (!incoming) throw new Error("unsupported incoming call operation");
 		if (this.#incomingBusy || this.#lastIncomingId === incoming.callId) {
 			throw new Error("incoming call already handled or busy");
 		}
@@ -350,7 +372,7 @@ class ClientCall implements CallClient {
 		this.#incomingBusy = true;
 		this.#lastIncomingId = incoming.callId;
 		try {
-			await transport.connect({ route: incoming.route });
+			await transport.connect({ route: incoming.route, kind: incoming.kind });
 			opts.signal?.throwIfAborted();
 			await transport.verifyIncomingDetailed(incoming, identity, opts.signal);
 			await transport.acceptIncomingDetailed();
@@ -438,6 +460,7 @@ export function createCallClient(client: Client): CallClient {
 export interface IncomingCallEvent {
 	/** Validated native audio metadata, bound to the logged-in local profile. */
 	audio?: IncomingAudioCall;
+	incoming?: IncomingPlanetCall;
 	callMid: string;
 	from: string;
 	kind?: string;
@@ -455,12 +478,14 @@ export function parseIncomingCall(
 	op: LINETypes.Operation,
 	localMid = "",
 ): IncomingCallEvent {
-	const audio = parseIncomingAudioCall(op, localMid);
+	const incoming = parseIncomingPlanetCall(op, localMid);
 	return {
-		audio,
-		callMid: audio?.callId ?? (op as { param1?: string }).param1 ?? "",
-		from: audio?.callerMid ?? (op as { param2?: string }).param2 ?? "",
-		kind: audio ? "AUDIO" : (op as { param3?: string }).param3,
+		audio: incoming?.kind === "AUDIO" ? incoming : undefined,
+		incoming,
+		callMid: incoming?.notificationId ??
+			(op as { param1?: string }).param1 ?? "",
+		from: incoming?.callerMid ?? (op as { param2?: string }).param2 ?? "",
+		kind: incoming?.kind ?? (op as { param3?: string }).param3,
 		raw: op,
 	};
 }

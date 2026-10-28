@@ -102,3 +102,55 @@ Deno.test("Conn.new keeps the response stream on success", async () => {
 	await conn.close();
 	await settleFallbackTimer();
 });
+
+Deno.test("Conn upload stream backpressures writes at its bounded queue limit", async () => {
+	const { manager } = stubManager(() => Promise.resolve(new Response(null)));
+	const conn = new Conn(manager as never);
+	const writer = conn.createAsyncReadableStream();
+	for (let i = 0; i < 400; i++) {
+		await writer.enqueue(new Uint8Array([i & 0xff]));
+	}
+	let completed = false;
+	const blocked = writer.enqueue(new Uint8Array([0])).then(() =>
+		completed = true
+	);
+	await Promise.resolve();
+	assertEquals(completed, false);
+	const reader = writer.stream.getReader();
+	assertEquals((await reader.read()).value?.[0], 0);
+	await blocked;
+	assertEquals(completed, true);
+	reader.releaseLock();
+});
+
+Deno.test("Conn upload stream rejects blocked writes on close", async () => {
+	const { manager } = stubManager(() => Promise.resolve(new Response(null)));
+	const conn = new Conn(manager as never);
+	const writer = conn.createAsyncReadableStream();
+	for (let i = 0; i < 400; i++) {
+		await writer.enqueue(new Uint8Array([i & 0xff]));
+	}
+	let settled = false;
+	const blocked = writer.enqueue(new Uint8Array([0])).then(
+		() => settled = true,
+		() => settled = true,
+	);
+	writer.close();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assertEquals(settled, true);
+	await blocked;
+});
+
+Deno.test("Conn reassembles byte-fragmented PUSH frames with one final copy", async () => {
+	const { manager } = stubManager(() => Promise.resolve(new Response(null)));
+	const conn = new Conn(manager as never);
+	const received: Array<{ type: number; payload: number[] }> = [];
+	conn.onPacketReceived = (type, payload) => {
+		received.push({ type, payload: Array.from(payload) });
+		return Promise.resolve();
+	};
+	for (const byte of [0, 4, 5, 9, 8, 7, 6]) {
+		await conn.onDataReceived(new Uint8Array([byte]));
+	}
+	assertEquals(received, [{ type: 5, payload: [9, 8, 7, 6] }]);
+});

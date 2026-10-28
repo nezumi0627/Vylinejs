@@ -16,9 +16,18 @@ interface GroupKey {
 	keyId: number;
 }
 
+export interface E2EEIdentityStatus {
+	ok: boolean;
+	selectedKeyId: number | null;
+	serverLatestKeyId: number | null;
+	matchedKeyIds: number[];
+	degraded: boolean;
+}
+
 export class E2EE {
 	readonly client: BaseClient;
 	private loginKey?: { keyId: number | string; privKey: Buffer };
+	private verifiedLoginKey = false;
 	constructor(client: BaseClient) {
 		this.client = client;
 	}
@@ -26,8 +35,91 @@ export class E2EE {
 		privKey: Buffer,
 		registeredPubKey: Buffer,
 	): boolean {
-		const derivedPub = nacl.scalarMult.base(new Uint8Array(privKey));
-		return Buffer.from(derivedPub).equals(registeredPubKey);
+		if (privKey.length !== 32 || registeredPubKey.length !== 32) return false;
+		try {
+			const derivedPub = nacl.scalarMult.base(new Uint8Array(privKey));
+			return Buffer.from(derivedPub).equals(registeredPubKey);
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Reconcile imported or stored private keys with the server's registered
+	 * public keys. Keeps every verified historical key and selects the newest
+	 * verified key for sending. This never registers or rotates a key.
+	 */
+	public async reconcileStoredE2EEIdentity(
+		mid: string,
+	): Promise<E2EEIdentityStatus> {
+		if (!mid) throw new InternalError("Invalid mid", "mid is required");
+		const serverKeys = await this.client.talk.getE2EEPublicKeys();
+		const registered = serverKeys.flatMap((key) => {
+			const rawKeyId = key.keyId ??
+				(key as unknown as { "2"?: number | string })[2];
+			const rawPubKey = key.keyData ??
+				(key as unknown as { "4"?: Uint8Array })[4];
+			const keyId = Number(rawKeyId);
+			if (!Number.isSafeInteger(keyId) || !rawPubKey) return [];
+			return [{ keyId, pubKey: Buffer.from(rawPubKey) }];
+		});
+		const serverLatestKeyId = registered.reduce<number | null>(
+			(latest, key) =>
+				latest === null || key.keyId > latest ? key.keyId : latest,
+			null,
+		);
+		const matched: Array<{
+			keyId: number;
+			privKey: string;
+			pubKey: string;
+			e2eeVersion?: LooseType;
+		}> = [];
+
+		for (const key of registered) {
+			const raw = await this.client.storage.get(`e2eeKeys:${key.keyId}`);
+			if (typeof raw !== "string") continue;
+			try {
+				const local = JSON.parse(raw) as {
+					privKey?: string;
+					e2eeVersion?: LooseType;
+				};
+				if (typeof local.privKey !== "string") continue;
+				const privKey = Buffer.from(local.privKey, "base64");
+				if (!this.verifyE2EEKeyPair(privKey, key.pubKey)) continue;
+				const verified = {
+					keyId: key.keyId,
+					privKey: local.privKey,
+					pubKey: key.pubKey.toString("base64"),
+					e2eeVersion: local.e2eeVersion,
+				};
+				await this.client.storage.set(
+					`e2eeKeys:${key.keyId}`,
+					JSON.stringify(verified),
+				);
+				matched.push(verified);
+			} catch {
+				// Ignore malformed local key records; never treat them as verified.
+			}
+		}
+
+		matched.sort((a, b) => a.keyId - b.keyId);
+		const selected = matched.at(-1);
+		if (selected) {
+			await this.client.storage.set(
+				`e2eeKeys:${mid}`,
+				JSON.stringify(selected),
+			);
+		} else {
+			await this.client.storage.delete(`e2eeKeys:${mid}`);
+		}
+		return {
+			ok: selected !== undefined,
+			selectedKeyId: selected?.keyId ?? null,
+			serverLatestKeyId,
+			matchedKeyIds: matched.map((key) => key.keyId),
+			degraded: selected !== undefined &&
+				selected.keyId !== serverLatestKeyId,
+		};
 	}
 
 	public async verifyStoredKeyAgainstServer(
@@ -75,7 +167,20 @@ export class E2EE {
 				"Login key does not match the server-registered public key; no replacement key was registered",
 			);
 		}
+		this.verifiedLoginKey = verified === true;
 		this.loginKey = undefined;
+	}
+
+	/** Reconcile the authenticated identity after the profile MID is available. */
+	public async reconcileLoginIdentity(mid: string): Promise<void> {
+		if (!this.verifiedLoginKey) return;
+		this.verifiedLoginKey = false;
+		try {
+			await this.reconcileStoredE2EEIdentity(mid);
+		} catch (error) {
+			// Keep login successful if the optional historical-key scan is unavailable.
+			this.e2eeLog("reconcileLoginIdentityFailed", error);
+		}
 	}
 
 	public async getE2EESelfKeyData(mid: string): Promise<LooseType> {

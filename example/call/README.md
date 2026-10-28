@@ -68,3 +68,30 @@ If `acquireCallRoute(/V4)` returns `INVALID_STATE` while using a primary token,
 first verify that `LINE_DEVICE` matches the token's real device family and that
 the command came from a callable 1:1 friend chat. If it still fails, set
 `LINE_CALL_DEVNAME` to the primary device model, for example `Pixel 8`.
+
+## Microphone and speaker adapters
+
+`pcm_device_adapters.ts` shows the boundary for connecting a platform audio
+backend to a `CallSession`. Implement `PcmCaptureDevice.frames()` to yield
+48 kHz, signed 16-bit PCM frames and `PcmPlaybackDevice.write()` to play those
+frames. The example deliberately leaves hardware access to the application,
+since microphone and speaker APIs differ by runtime.
+
+```ts
+import { opusCodecFactory, PlanetTransport } from "@evex/linejs/call";
+import { bridgePcmDevices } from "./pcm_device_adapters.ts";
+
+const localMid = client.base.profile?.mid;
+if (!localMid) throw new Error("profile is not ready");
+client.call.setCodecFactory(await opusCodecFactory());
+
+const session = client.call.startSession({
+  to: peerMid,
+  transport: new PlanetTransport({ localMid }),
+});
+await session.start();
+await bridgePcmDevices(session, microphone, speaker, { signal });
+```
+
+The bridge ends the call when either media pipeline finishes and closes both
+device adapters on success, failure, or abort.

@@ -1,4 +1,6 @@
 import { assertEquals } from "@std/assert";
+import { assertThrows } from "@std/assert";
+import { Buffer } from "node:buffer";
 import { TMoreCompactProtocol } from "./tmc.ts";
 
 Deno.test("decodeZigZag matches standard thrift zigzag for positive values", () => {
@@ -27,4 +29,31 @@ Deno.test("decodeZigZag round-trips with standard zigzag encode", () => {
 	for (const v of [-1000, -100, -3, -2, -1, 0, 1, 2, 3, 100, 1000]) {
 		assertEquals(tmc.decodeZigZag(zigzagEncode(v)), v);
 	}
+});
+
+Deno.test("TMoreCompactProtocol rejects a truncated header before reading it", () => {
+	assertThrows(
+		() => new TMoreCompactProtocol(Buffer.from([0, 0, 0, 10, 0])),
+		Error,
+	);
+});
+
+Deno.test("TMoreCompactProtocol rejects field bitmaps that would wrap shifts", () => {
+	const protocol = new TMoreCompactProtocol();
+	assertThrows(() => protocol.decodeFieldBitmap(2 ** 30), Error);
+	assertThrows(() => protocol.decodeFieldBitmap(2 ** 32), Error);
+});
+
+Deno.test("TMoreCompactProtocol resets per-message state when reused", () => {
+	const emptyMessage = Buffer.from([0, 0, 0, 0, 0, 0]);
+	const protocol = new TMoreCompactProtocol();
+	protocol.lastFieldId = 4;
+	protocol.lastStringId = 99n;
+	protocol.stringTable = ["stale"];
+	protocol.setDataAndParse(emptyMessage);
+
+	assertEquals(protocol.lastFieldId, 0);
+	assertEquals(protocol.lastStringId, 0n);
+	assertEquals(protocol.stringTable, []);
+	assertEquals(protocol.res, {});
 });

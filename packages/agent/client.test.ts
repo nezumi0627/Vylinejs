@@ -144,6 +144,83 @@ Deno.test("AgentIClient — reset clears history", async () => {
 	assertEquals(client.history.length, 0);
 });
 
+Deno.test("AgentIClient bounds retained conversation history", async () => {
+	const client = new AgentIClient({
+		cookie: "x=y",
+		maxHistoryMessages: 3,
+		fetch: makeMockFetch([`data: {"text":"ok"}\n\n`]),
+	});
+	for (const prompt of ["one", "two", "three"]) {
+		for await (const _chunk of client.chat(prompt)) { /* drain */ }
+	}
+	assertEquals(client.history.length, 3);
+	assertEquals(client.history[1].contents[0].text, "three");
+	assertEquals(client.history[2].contents[0].text, "ok");
+});
+
+Deno.test("AgentIClient rejects an oversized SSE event", async () => {
+	const client = new AgentIClient({
+		cookie: "x=y",
+		fetch: makeMockFetch([`data: ${"x".repeat(1_048_577)}`]),
+	});
+	let thrown: unknown;
+	try {
+		for await (const _chunk of client.chat("Hi")) { /* drain */ }
+	} catch (error) {
+		thrown = error;
+	}
+	assert(thrown instanceof Error);
+	assert(thrown.message.includes("SSE event exceeds"));
+});
+
+Deno.test("AgentIClient rejects oversized user text before retaining it", async () => {
+	let fetched = false;
+	const client = new AgentIClient({
+		cookie: "x=y",
+		fetch: (() => {
+			fetched = true;
+			return Promise.resolve(new Response(null));
+		}) as unknown as typeof fetch,
+	});
+	let thrown: unknown;
+	try {
+		for await (const _chunk of client.chat("x".repeat(1_048_577))) {
+			assert(false, "oversized user message unexpectedly produced a chunk");
+		}
+	} catch (error) {
+		thrown = error;
+	}
+	assert(thrown instanceof RangeError);
+	assertEquals(fetched, false);
+	assertEquals(client.history.length, 0);
+});
+
+Deno.test("AgentIClient cancels an SSE stream when iteration stops early", async () => {
+	let canceled = false;
+	const client = new AgentIClient({
+		cookie: "x=y",
+		fetch: (() =>
+			Promise.resolve(
+				new Response(
+					new ReadableStream({
+						start(controller) {
+							controller.enqueue(
+								new TextEncoder().encode('data: {"text":"one"}\n\n'),
+							);
+						},
+						cancel() {
+							canceled = true;
+						},
+					}),
+				),
+			)) as unknown as typeof fetch,
+	});
+	const iterator = client.chat("Hi");
+	await iterator.next();
+	await iterator.return(undefined);
+	assertEquals(canceled, true);
+});
+
 Deno.test("AgentIClient — sends the right request shape", async () => {
 	let capturedUrl: string | undefined;
 	let capturedBody: string | undefined;

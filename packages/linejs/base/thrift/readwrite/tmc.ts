@@ -59,11 +59,17 @@ export class TMoreCompactProtocol {
 	readVarint(): number {
 		let result = BigInt(0);
 		let shift = 0;
+		let count = 0;
 		while (true) {
+			this.requireAvailable(1);
+			if (count++ >= 10) throw new Error("TMC varint exceeds 10 bytes");
 			const byte = this.data[this.currentPosition];
 			this.currentPosition += 1;
 			result |= BigInt(byte & 127) << BigInt(shift);
 			if ((byte & 128) !== 128) {
+				if (result > 0xffffffffffffffffn) {
+					throw new Error("TMC varint exceeds uint64");
+				}
 				return (result > Number.MAX_SAFE_INTEGER)
 					? <LooseType> result
 					: Number(result);
@@ -74,6 +80,7 @@ export class TMoreCompactProtocol {
 
 	// Read bytes from position
 	readBytes(position: number, length: number): number[] {
+		this.requireRange(position, length);
 		if (length === 0) {
 			return [];
 		}
@@ -84,7 +91,35 @@ export class TMoreCompactProtocol {
 	// Set data and parse
 	setDataAndParse(inputData: Buffer): void {
 		this.data = inputData;
+		this.currentPosition = 0;
+		this.lastFieldId = 0;
+		this.lastStringId = 0n;
+		this.stringTable = [];
+		this.typeSequence = [];
+		this.res = null;
+		this.dummyProtocol = undefined;
 		this.parseHeader();
+	}
+
+	private requireAvailable(length: number): void {
+		this.requireRange(this.currentPosition, length);
+	}
+
+	private requireRange(position: number, length: number): void {
+		if (
+			!Number.isSafeInteger(position) || !Number.isSafeInteger(length) ||
+			position < 0 || length < 0 || position + length > this.data.length
+		) {
+			throw new Error("Truncated or invalid TMC input");
+		}
+	}
+
+	private readSize(label: string): number {
+		const value = this.readVarint();
+		if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+			throw new Error(`Invalid TMC ${label}`);
+		}
+		return value;
 	}
 
 	// Parse message body
@@ -143,11 +178,13 @@ export class TMoreCompactProtocol {
 			value = Boolean(temp);
 		} else if (typeId === 3) {
 			// BYTE
+			this.requireAvailable(1);
 			const byte = this.data[this.currentPosition];
 			value = byte;
 			this.currentPosition += 1;
 		} else if (typeId === 4) {
 			// DOUBLE
+			this.requireAvailable(8);
 			value = this.data.readDoubleLE(this.currentPosition);
 			this.currentPosition += 8;
 		} else if (typeId === 8) {
@@ -178,12 +215,17 @@ export class TMoreCompactProtocol {
 		} else if (typeId === 13) {
 			// MAP
 			value = {} as Record<string, unknown>;
-			const mapSize = this.readVarint();
+			const mapSize = this.readSize("map size");
 			subType = [0, 0];
 			valData = {} as Record<string, unknown>;
 
 			if (mapSize !== 0) {
 				const typesByte = this.readSingleByte();
+				if (
+					mapSize > Math.floor((this.data.length - this.currentPosition) / 2)
+				) {
+					throw new Error("TMC map size exceeds remaining input");
+				}
 				const [keyType, valueType] = this.decodeMapTypes(typesByte);
 				subType = [keyType, valueType];
 
@@ -196,14 +238,16 @@ export class TMoreCompactProtocol {
 		} else if (typeId === 14 || typeId === 15) {
 			// SET or LIST
 			value = [] as unknown[];
-			const sizeType = this.data[this.currentPosition];
-			this.currentPosition += 1;
+			const sizeType = this.readSingleByte();
 
 			let count = sizeType >> 4;
 			const elementType = sizeType & 0x0f;
 
 			if (count === 15) {
-				count = this.readVarint();
+				count = this.readSize("collection size");
+			}
+			if (count > this.data.length - this.currentPosition) {
+				throw new Error("TMC collection size exceeds remaining input");
 			}
 
 			subType = [this.convertCompactTypeToTType(elementType)];
@@ -245,7 +289,12 @@ export class TMoreCompactProtocol {
 
 	// Read string table and parse message
 	readStringTableAndParseMessage(): void {
-		const tableSize = this.readVarint();
+		const tableSize = this.readSize("string table size");
+		if (
+			tableSize > Math.floor((this.data.length - this.currentPosition) / 17)
+		) {
+			throw new Error("TMC string table exceeds remaining input");
+		}
 
 		for (let i = 0; i < tableSize; i++) {
 			const m = String.fromCharCode(this.data[this.currentPosition]) +
@@ -260,17 +309,14 @@ export class TMoreCompactProtocol {
 
 	// Decode field bitmap
 	decodeFieldBitmap(bitmap: number): number[] {
+		if (!Number.isSafeInteger(bitmap) || bitmap < 0 || bitmap >= 2 ** 30) {
+			throw new Error("TMC field bitmap exceeds supported field IDs");
+		}
 		const fieldIds: number[] = [];
-		let bitPosition = 0;
-
-		while (true) {
-			const mask = 1 << bitPosition;
-			if (mask > bitmap) {
-				break;
-			} else if ((bitmap & mask) !== 0) {
+		for (let bitPosition = 0; bitPosition < 32; bitPosition++) {
+			if (Math.floor(bitmap / 2 ** bitPosition) % 2 === 1) {
 				fieldIds.push(bitPosition);
 			}
-			bitPosition += 1;
 		}
 
 		return fieldIds;
@@ -286,7 +332,8 @@ export class TMoreCompactProtocol {
 
 	// Read string
 	readString(): string | Buffer {
-		const length = this.readVarint();
+		const length = this.readSize("string length");
+		this.requireAvailable(length);
 		const buffer = this.data.subarray(
 			this.currentPosition,
 			this.currentPosition + length,
@@ -306,12 +353,8 @@ export class TMoreCompactProtocol {
 	// Parse header and initialize
 	parseHeader(): void {
 		this.currentPosition = 3;
-
-		if (this.data.length === 4) {
-			throw new Error(`Invalid data: ${this.data.toString("hex")} (code: 20)`);
-		}
-
-		const headerLength = this.readVarint();
+		const headerLength = this.readSize("header length");
+		this.requireAvailable(headerLength);
 		const headerBytes = this.readBytes(this.currentPosition, headerLength);
 		this.typeSequence = new Array(headerLength << 1).fill(0);
 
@@ -372,6 +415,9 @@ export class TMoreCompactProtocol {
 		let index = 0;
 
 		while (true) {
+			if (index >= buffer.length || index >= 10) {
+				throw new Error("Truncated or oversized TMC varint");
+			}
 			const byte = buffer[index];
 			index += 1;
 			result |= BigInt(byte & 0x7f) << BigInt(shift);
@@ -387,6 +433,7 @@ export class TMoreCompactProtocol {
 
 	// Read single byte
 	readSingleByte(): number {
+		this.requireAvailable(1);
 		const byte = this.data[this.currentPosition];
 		this.currentPosition += 1;
 		return byte;

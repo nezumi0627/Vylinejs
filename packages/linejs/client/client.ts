@@ -90,6 +90,7 @@ function isApiNotCapable(e: unknown): boolean {
 
 export class Client extends TypedEventEmitter<ClientEvents> {
 	readonly base: BaseClient;
+	#listening = false;
 	#liff?: LiffClient;
 	constructor(base: BaseClient) {
 		super();
@@ -128,12 +129,37 @@ export class Client extends TypedEventEmitter<ClientEvents> {
 	listen(
 		opts: ListenOptions = { talk: true, square: true },
 	): void {
-		const polling = this.base.createPolling();
 		const signal = opts.signal;
-		signal && signal.addEventListener("abort", () => {
+		let activeLoops = Number(!!opts.talk) + Number(!!opts.square);
+		if (activeLoops === 0 || signal?.aborted) return;
+		if (this.#listening) {
+			throw new Error("Client.listen already active");
+		}
+		this.#listening = true;
+		const polling = this.base.createPolling();
+		let abortListenerDisposed = false;
+		const disposeAbortListener = () => {
+			if (abortListenerDisposed) return;
+			abortListenerDisposed = true;
+			signal?.removeEventListener("abort", onAbort);
+		};
+		const onAbort = () => {
 			this.base.push.opStream.close();
 			this.base.push.sqStream.close();
-		});
+			disposeAbortListener();
+		};
+		const onLoopDone = () => {
+			activeLoops--;
+			if (activeLoops === 0) {
+				this.#listening = false;
+				disposeAbortListener();
+			}
+		};
+		if (signal?.aborted) {
+			onAbort();
+			return;
+		}
+		if (activeLoops > 0) signal?.addEventListener("abort", onAbort);
 		// Nothing awaits the loops below, so a throw from the event stream, from
 		// decryptE2EEMessage or from one of the user's own listeners used to
 		// surface as an unhandled rejection and take the host process down.
@@ -150,75 +176,83 @@ export class Client extends TypedEventEmitter<ClientEvents> {
 		};
 		if (opts.talk) {
 			(async () => {
-				for await (
-					const event of polling.listenTalkEvents()
-				) {
-					try {
-						this.emit("event", event);
-						if (
-							event.type === "SEND_MESSAGE" ||
-							event.type === "RECEIVE_MESSAGE"
-						) {
-							this.emit(
-								"message",
-								new TalkMessage({
-									raw: await this.base.e2ee.decryptE2EEMessage(
-										event.message,
-									),
-									client: this,
-								}),
-							);
-						} else if (
-							// 159: someone else edited a message in a chat we are in.
-							event.type === "NOTIFIED_EDIT_MESSAGE" ||
-							// 158: we edited a message ourselves, synced from another
-							// device. Both are surfaced for the same reason
-							// SEND_MESSAGE and RECEIVE_MESSAGE both emit "message".
-							event.type === "EDIT_MESSAGE"
-						) {
-							this.emit(
-								"message:edit",
-								new TalkMessage({
-									raw: await this.base.e2ee.decryptE2EEMessage(
-										event.message,
-									),
-									client: this,
-								}),
-							);
-						} else if (event.type === "NOTIFIED_RECEIVED_CALL") {
-							this.emit(
-								"call:incoming",
-								parseIncomingCall(event, this.base.profile?.mid),
-							);
-						} else if (event.type === "CANCEL_CALL") {
-							this.emit("call:cancel", parseCancelCall(event));
+				try {
+					for await (
+						const event of polling.listenTalkEvents({ signal })
+					) {
+						try {
+							this.emit("event", event);
+							if (
+								event.type === "SEND_MESSAGE" ||
+								event.type === "RECEIVE_MESSAGE"
+							) {
+								this.emit(
+									"message",
+									new TalkMessage({
+										raw: await this.base.e2ee.decryptE2EEMessage(
+											event.message,
+										),
+										client: this,
+									}),
+								);
+							} else if (
+								// 159: someone else edited a message in a chat we are in.
+								event.type === "NOTIFIED_EDIT_MESSAGE" ||
+								// 158: we edited a message ourselves, synced from another
+								// device. Both are surfaced for the same reason
+								// SEND_MESSAGE and RECEIVE_MESSAGE both emit "message".
+								event.type === "EDIT_MESSAGE"
+							) {
+								this.emit(
+									"message:edit",
+									new TalkMessage({
+										raw: await this.base.e2ee.decryptE2EEMessage(
+											event.message,
+										),
+										client: this,
+									}),
+								);
+							} else if (event.type === "NOTIFIED_RECEIVED_CALL") {
+								this.emit(
+									"call:incoming",
+									parseIncomingCall(event, this.base.profile?.mid),
+								);
+							} else if (event.type === "CANCEL_CALL") {
+								this.emit("call:cancel", parseCancelCall(event));
+							}
+						} catch (error) {
+							reportListenFailure(error);
 						}
-					} catch (error) {
-						reportListenFailure(error);
 					}
+				} finally {
+					onLoopDone();
 				}
 			})().catch(reportListenFailure);
 		}
 		if (opts.square) {
 			(async () => {
-				for await (
-					const event of polling.listenSquareEvents()
-				) {
-					try {
-						this.emit("square:event", event);
-						if (event.type === "NOTIFICATION_MESSAGE") {
-							this.emit(
-								"square:message",
-								new SquareMessage({
-									raw: event.payload.notificationMessage
-										.squareMessage,
-									client: this,
-								}),
-							);
+				try {
+					for await (
+						const event of polling.listenSquareEvents({ signal })
+					) {
+						try {
+							this.emit("square:event", event);
+							if (event.type === "NOTIFICATION_MESSAGE") {
+								this.emit(
+									"square:message",
+									new SquareMessage({
+										raw: event.payload.notificationMessage
+											.squareMessage,
+										client: this,
+									}),
+								);
+							}
+						} catch (error) {
+							reportListenFailure(error);
 						}
-					} catch (error) {
-						reportListenFailure(error);
 					}
+				} finally {
+					onLoopDone();
 				}
 			})().catch(reportListenFailure);
 		}

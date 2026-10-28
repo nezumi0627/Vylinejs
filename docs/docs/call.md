@@ -98,7 +98,7 @@ and real-time pacing.
 | Opus encode/decode hooks | `opusCodecFactory()` |
 | WAV/PCM helpers | `decodeWavSync()`, `resampleLinear()`, `bufferSource()` |
 | Incoming call notifications | `call:incoming`, `call:cancel` |
-| Incoming call answering | Not wrapped as a high-level public flow yet |
+| Incoming 1:1 call answering | `answerIncoming` for validated audio and video calls |
 | Group-call URL/control APIs | Wrapped under `client.call.*` |
 | Group-call PLANET join | `PlanetTransport.joinGroupDetailed()` |
 | Group-call audio send | Supported with native group Opus packetization |
@@ -618,9 +618,22 @@ client.on("call:cancel", ({ callMid, from, reason }) => {
 client.listen({ talk: true, square: false });
 ```
 
-These are notifications, not a complete inbound media implementation. Answering
-an incoming call requires a separate native-compatible answer flow and is not
-wrapped as a stable high-level API yet.
+For validated one-to-one audio and video notifications, answer explicitly with
+the stable installation ID used by the application:
+
+```ts
+client.on("call:incoming", async (event) => {
+	const transport = await client.call.answerIncoming(event, { deviceId });
+	if (event.kind === "VIDEO") {
+		for await (const frame of transport.receiveVideo()) {
+			await videoDecoder.decode(frame.data, { keyFrame: frame.key, timestamp: frame.timestamp });
+		}
+	}
+});
+```
+
+Unsupported or unauthenticated call metadata is rejected before the answer
+exchange. Applications still own call UI, media capture, encoding, and cleanup.
 
 ## `CallSession`
 
@@ -759,6 +772,64 @@ After `mediaReady`, use `packetizeNativeGroupOpusPairs()` for the group-specific
 MSB-first activity bitmap after the TOC/count and before any VBR lengths or frame
 data. Each bit means **non-silence**, including unvoiced audio, not just speech.
 SILK/hybrid do not need this external bitmap.
+
+`CallSession` can now run the PLANET group join and mix received participant
+audio into 48 kHz mono PCM. Pass the acquired group route and chat MID as the
+session target:
+
+```ts
+const session = client.call.startSession({
+	to: chatMid,
+	group: { route },
+	transport: new PlanetTransport({ localMid }),
+	codecs: opusCodecFactory(),
+});
+
+await session.start();
+for await (const frame of session.received()) {
+	await audioSink.write(frame);
+}
+```
+
+The group receiver demultiplexes XRTP, unpacks EAS2 frames, decodes each SSRC
+independently, and mixes active sources with a 60 ms initial playout cushion.
+`session.participants` contains the latest roster, and the `participants` event
+fires for initial state and subsequent conference pushes. Audio not present in
+the active roster is excluded from the mixer. Applications that need
+per-participant streams can consume
+`PlanetTransport.receiveAudio()` directly instead of `CallSession.received()`.
+Group conference notifications travel over a separate DATA SRTP key; PLANET
+notifier packets are reassembled and acknowledged before their roster updates
+are emitted.
+
+When the roster advertises remote video sources, the transport subscribes to
+those SVC streams, authenticates VIDEO SRTP independently, unwraps the VP8 SVC
+profile, and reassembles bounded EVS3 frames. Consume encoded VP8 frames with
+their verified sender MID:
+
+```ts
+for await (const frame of session.receivedVideo()) {
+	await videoDecoder.decode(frame.data, {
+		keyFrame: frame.key,
+		timestamp: frame.timestamp,
+	});
+}
+```
+
+For one-to-one or group video, start the session with `kind: "VIDEO"`, then
+provide key and delta VP8 frames from your encoder after enabling local video.
+One-to-one calls advertise video in the setup offer. Group calls advertise it in
+the participation offer and send only while a peer has requested the stream:
+
+```ts
+await session.setVideoEnabled(true);
+await session.sendVideo({ data: vp8Bytes, key: true, timestamp: timestamp90k });
+```
+
+The application owns camera capture, VP8 encoding, frame pacing, and keyframe
+requests. Send a keyframe first and then submit frames at the encoder's cadence.
+Await `session.setVideoEnabled(false)` to stop sending after the peer confirms the
+control request.
 
 The helper accepts the same prefixed 20 ms packets used by 1:1 examples. Supply
 one activity boolean per input frame when using CELT:

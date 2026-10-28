@@ -4,6 +4,7 @@
 export interface KeyValues {
 	cert: string;
 	qrCert: string;
+	accessToken: string;
 	refreshToken: string;
 	expire: number;
 	reqseq: Record<string, number>;

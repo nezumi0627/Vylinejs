@@ -128,6 +128,63 @@ Deno.test("query — POSTs /v2/query-ai with accept: text/event-stream + streams
 	assertEquals(chunks[2].event, "run.completed");
 });
 
+Deno.test("query rejects an oversized SSE event", async () => {
+	const fakeFetch = (() =>
+		Promise.resolve(
+			new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(
+							new TextEncoder().encode(`data:${"x".repeat(1_048_577)}`),
+						);
+						controller.close();
+					},
+				}),
+				{ status: 200, headers: { "content-type": "text/event-stream" } },
+			),
+		)) as unknown as typeof fetch;
+	const c = new LineAiClient({ accessToken: "x", fetch: fakeFetch });
+	let thrown: unknown;
+	try {
+		for await (
+			const _ of c.query({ threadId: null, message: "x", imageUrl: null })
+		) {
+			assert(false, "oversized event unexpectedly produced a chunk");
+		}
+	} catch (error) {
+		thrown = error;
+	}
+	assert(thrown instanceof Error);
+	assert(thrown.message.includes("SSE event exceeds"));
+});
+
+Deno.test("query cancels its SSE reader when iteration ends early", async () => {
+	let canceled = false;
+	const fakeFetch = (() =>
+		Promise.resolve(
+			new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode("data:{}\n\n"));
+					},
+					cancel() {
+						canceled = true;
+					},
+				}),
+				{ status: 200, headers: { "content-type": "text/event-stream" } },
+			),
+		)) as unknown as typeof fetch;
+	const iterator = new LineAiClient({ accessToken: "x", fetch: fakeFetch })
+		.query({
+			threadId: null,
+			message: "x",
+			imageUrl: null,
+		});
+	await iterator.next();
+	await iterator.return(undefined);
+	assertEquals(canceled, true);
+});
+
 Deno.test("query — throws with body included on non-2xx", async () => {
 	const fakeFetch = (() =>
 		Promise.resolve(
@@ -219,4 +276,31 @@ Deno.test("body returns parsed JSON + parses rate-limit headers", async () => {
 	m.next({ foo: 1 });
 	const r = await client(m.fetch).getServiceInfo();
 	assert(r.body && typeof r.body === "object");
+});
+
+Deno.test("JSON API responses are canceled when they exceed the size limit", async () => {
+	let canceled = false;
+	const fetch = (() =>
+		Promise.resolve(
+			new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new Uint8Array(4 * 1_048_576 + 1));
+					},
+					cancel() {
+						canceled = true;
+					},
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		)) as unknown as typeof globalThis.fetch;
+	let thrown: unknown;
+	try {
+		await new LineAiClient({ accessToken: "x", fetch }).getServiceInfo();
+	} catch (error) {
+		thrown = error;
+	}
+	assert(thrown instanceof Error);
+	assert(thrown.message.includes("exceeds 4 MiB"));
+	assertEquals(canceled, true);
 });

@@ -1,10 +1,54 @@
 // Audio pipeline — PCM in/out, Opus codec hook.
+// PCM activity helpers adapted from tqmane/vyline-api; terms: docs/licenses/tqmane-vyline-api-MIT.txt.
 
 export interface PcmFrame {
 	samples: Int16Array;
 	sampleRate: number;
 	channels: number;
 	timestamp?: number;
+}
+
+export interface CallAudioPacket {
+	ssrc: number;
+	timestamp: number;
+	frames: Uint8Array[];
+}
+
+/** Per-frame AC energy in -dBov units for RFC 6464 audio-level extensions. */
+export function pcmAudioLevel(samples: Int16Array): number {
+	if (samples.length === 0) return 127;
+	let energy = 0;
+	let sum = 0;
+	for (const sample of samples) {
+		energy += sample * sample;
+		sum += sample;
+	}
+	const mean = sum / samples.length;
+	energy = Math.max(0, energy / samples.length - mean * mean);
+	return energy === 0 ? 127 : Math.min(
+		127,
+		Math.max(0, Math.round(-10 * Math.log10(energy / (32768 ** 2)))),
+	);
+}
+
+/** Maps PCM energy to native VSD activity, holding active audio for 200ms. */
+export class AudioActivityDetector {
+	#activeUntil = 0;
+
+	signal(level: number, now: number = performance.now()): 0 | 1 | 2 {
+		if (!Number.isFinite(level) || level < 0 || level > 127) {
+			throw new RangeError("audio level must be between 0 and 127");
+		}
+		if (!Number.isFinite(now) || now < 0) {
+			throw new RangeError("time must be a non-negative finite number");
+		}
+		if (level === 127) {
+			this.#activeUntil = 0;
+			return 0;
+		}
+		if (level <= 60) this.#activeUntil = now + 200;
+		return now < this.#activeUntil ? 2 : 1;
+	}
 }
 
 export interface AudioSource {

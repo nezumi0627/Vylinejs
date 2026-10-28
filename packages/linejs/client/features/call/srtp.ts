@@ -239,16 +239,29 @@ export function parseRtp(pkt: Uint8Array): {
 	timestamp: number;
 	ssrc: number;
 	marker: boolean;
+	extensionProfile?: number;
+	extensionData?: Uint8Array;
 	payload: Uint8Array;
 } {
 	if (pkt.length < 12) throw new Error("RTP too short");
+	const headerLength = rtpHeaderLength(pkt);
+	let extensionProfile: number | undefined;
+	let extensionData: Uint8Array | undefined;
+	if ((pkt[0] & 0x10) !== 0) {
+		const extensionOffset = 12 + (pkt[0] & 0x0f) * 4;
+		extensionProfile = readU16(pkt, extensionOffset);
+		extensionData = pkt.subarray(extensionOffset + 4, headerLength);
+	}
 	return {
 		payloadType: pkt[1] & 0x7f,
 		marker: (pkt[1] & 0x80) !== 0,
 		seq: readU16(pkt, 2),
 		timestamp: readU32(pkt, 4),
 		ssrc: readU32(pkt, 8),
-		payload: pkt.subarray(rtpHeaderLength(pkt)),
+		...(extensionProfile === undefined
+			? {}
+			: { extensionProfile, extensionData }),
+		payload: pkt.subarray(headerLength),
 	};
 }
 

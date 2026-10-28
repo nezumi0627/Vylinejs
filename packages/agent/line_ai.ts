@@ -166,19 +166,19 @@ export class LineAiClient {
 		};
 	}
 
-	async #get(
+	#get(
 		path: string,
 		extra?: Record<string, string>,
 	): Promise<LineAiResponse> {
 		return this.#req(path, "GET", undefined, extra);
 	}
-	async #postEmpty(path: string): Promise<LineAiResponse> {
+	#postEmpty(path: string): Promise<LineAiResponse> {
 		// smali fk2/a.f = RequestBody.create("", "application/json")
 		return this.#req(path, "POST", "", {
 			"content-type": "application/json; charset=utf-8",
 		});
 	}
-	async #postJson(path: string, body: unknown): Promise<LineAiResponse> {
+	#postJson(path: string, body: unknown): Promise<LineAiResponse> {
 		return this.#req(path, "POST", JSON.stringify(body), {
 			"content-type": "application/json; charset=utf-8",
 		});
@@ -196,13 +196,13 @@ export class LineAiClient {
 		});
 		return await this.#wrap(res);
 	}
-	async #wrap(res: Response): Promise<LineAiResponse> {
+	#wrap(res: Response): Promise<LineAiResponse> {
 		return wrapResponse(res);
 	}
 }
 
 async function wrapResponse(res: Response): Promise<LineAiResponse> {
-	const text = await res.text();
+	const text = await readResponseText(res);
 	let parsed: unknown = null;
 	if (text) {
 		try {
@@ -222,25 +222,95 @@ async function wrapResponse(res: Response): Promise<LineAiResponse> {
 	};
 }
 
-async function* parseSseStream(
-	stream: ReadableStream<Uint8Array>,
-): AsyncGenerator<LineAiQueryChunk> {
-	const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
-	let buffer = "";
+const MAX_LINE_AI_RESPONSE_BYTES = 4 * 1_048_576;
+
+async function readResponseText(res: Response): Promise<string> {
+	const contentLength = Number(res.headers.get("content-length"));
+	if (
+		Number.isFinite(contentLength) && contentLength > MAX_LINE_AI_RESPONSE_BYTES
+	) {
+		await res.body?.cancel();
+		throw new Error("LINE AI response exceeds 4 MiB");
+	}
+	if (!res.body) return "";
+	const reader = res.body.getReader();
+	const decoder = new TextDecoder();
+	let totalBytes = 0;
+	let complete = false;
+	const parts: string[] = [];
 	try {
 		while (true) {
 			const { value, done } = await reader.read();
-			if (done) break;
+			if (done) {
+				complete = true;
+				parts.push(decoder.decode());
+				break;
+			}
+			totalBytes += value.byteLength;
+			if (totalBytes > MAX_LINE_AI_RESPONSE_BYTES) {
+				throw new Error("LINE AI response exceeds 4 MiB");
+			}
+			parts.push(decoder.decode(value, { stream: true }));
+		}
+		return parts.join("");
+	} finally {
+		if (!complete) {
+			try {
+				await reader.cancel();
+			} catch { /* stream may already be errored */ }
+		}
+		reader.releaseLock();
+	}
+}
+
+async function* parseSseStream(
+	stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<LineAiQueryChunk> {
+	const maxEventBytes = 1_048_576;
+	const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+	let buffer = "";
+	let bufferBytes = 0;
+	let scanFrom = 0;
+	let complete = false;
+	const encoder = new TextEncoder();
+	try {
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) {
+				complete = true;
+				break;
+			}
 			buffer += value;
+			bufferBytes += encoder.encode(value).byteLength;
 			let nl: number;
-			while ((nl = buffer.indexOf("\n\n")) !== -1) {
+			while ((nl = buffer.indexOf("\n\n", scanFrom)) !== -1) {
 				const block = buffer.slice(0, nl);
 				buffer = buffer.slice(nl + 2);
+				const eventBytes = encoder.encode(block).byteLength;
+				if (eventBytes > maxEventBytes) {
+					throw new Error("LINE AI SSE event exceeds 1 MiB");
+				}
+				bufferBytes -= eventBytes + 2;
+				scanFrom = 0;
 				yield parseSseBlock(block);
 			}
+			scanFrom = Math.max(0, buffer.length - 1);
+			if (bufferBytes > maxEventBytes) {
+				throw new Error("LINE AI SSE event exceeds 1 MiB");
+			}
 		}
-		if (buffer.trim().length) yield parseSseBlock(buffer);
+		if (buffer.trim().length) {
+			if (bufferBytes > maxEventBytes) {
+				throw new Error("LINE AI SSE event exceeds 1 MiB");
+			}
+			yield parseSseBlock(buffer);
+		}
 	} finally {
+		if (!complete) {
+			try {
+				await reader.cancel();
+			} catch { /* stream may already be errored */ }
+		}
 		reader.releaseLock();
 	}
 }

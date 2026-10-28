@@ -33,7 +33,7 @@ function gen_m(ss = [1, 3, 5, 6, 8, 9, 10]) {
 
 export interface ReadableStreamWriter<T> {
 	stream: ReadableStream<T>;
-	enqueue(chunk: T): void;
+	enqueue(chunk: T): Promise<void>;
 	close(): void;
 	error(err: LooseType): void;
 	renew(): void;
@@ -46,8 +46,12 @@ export class ConnManager {
 	signOnRequests: Record<number, LooseType[]> = {};
 	onPingCallback: (id: number) => void;
 	onSignReqResp: Record<number, LooseType> = {};
-	onSignOnResponse: (reqId: number, isFin: boolean, data: Uint8Array) => void;
-	onPushResponse: (frame: LegyH2PushFrame) => void;
+	onSignOnResponse: (
+		reqId: number,
+		isFin: boolean,
+		data: Uint8Array,
+	) => Promise<unknown>;
+	onPushResponse: (frame: LegyH2PushFrame) => Promise<void>;
 	_eventSynced = false;
 	_pingInterval = 30;
 	authToken: string | null = null;
@@ -66,72 +70,122 @@ export class ConnManager {
 	}
 
 	log(text: string, data?: LooseType) {
+		const listeners = this.client.listeners?.get("log");
+		if (listeners && listeners.length === 0) return;
 		this.client.log("[LEGY/PUSH] " + text, data ?? "");
 	}
 
 	createAsyncReadableStream<T>(): ReadableStreamWriter<T> {
 		let controller: ReadableStreamDefaultController<T> | null = null;
+		let pullReady: (() => void) | undefined;
 
-		const chunks: T[] = [];
-		const stream = new ReadableStream<T>({
-			start(c) {
-				controller = c;
-			},
-			pull(c) {
-				if (chunks.length) {
-					c.enqueue(chunks.shift()!);
-				}
-			},
-			cancel() {
-				controller = null;
-				writer.renew();
-			},
-		}, {
-			highWaterMark: 200,
-			size() {
-				return 1;
-			},
-		});
+		const chunks: (T | undefined)[] = [];
+		let head = 0;
+		let blockedWriters = 0;
+		const spaceWaiters: Array<{
+			resolve: () => void;
+			reject: (error: Error) => void;
+		}> = [];
+		const maxPendingChunks = 200;
+		const pendingCount = () => chunks.length - head;
+		const releaseWriter = () => spaceWaiters.shift()?.resolve();
+		const compactQueue = () => {
+			if (head > 64 && head * 2 >= chunks.length) {
+				chunks.splice(0, head);
+				head = 0;
+			}
+		};
+		const rejectBlockedWriters = (error: Error) => {
+			for (const waiter of spaceWaiters.splice(0)) waiter.reject(error);
+		};
+		const closeConnection = () => {
+			void this.conns[0]?.close().catch(() => {});
+		};
+		const createStream = () =>
+			new ReadableStream<T>({
+				start(c) {
+					controller = c;
+				},
+				pull(c) {
+					if (pendingCount()) {
+						pullReady = undefined;
+						const chunk = chunks[head]!;
+						chunks[head++] = undefined;
+						if (head === chunks.length) {
+							chunks.length = 0;
+							head = 0;
+						} else compactQueue();
+						c.enqueue(chunk);
+						releaseWriter();
+						return;
+					}
+					return new Promise<void>((resolve) => pullReady = resolve);
+				},
+				cancel() {
+					controller = null;
+					pullReady?.();
+					pullReady = undefined;
+					rejectBlockedWriters(new Error("PUSH event stream was canceled"));
+					writer.renew();
+				},
+			}, {
+				highWaterMark: 0,
+				size() {
+					return 1;
+				},
+			});
 
 		const writer = {
-			stream,
-			enqueue(chunk: T) {
-				const data = chunk;
-				if (controller && (controller.desiredSize ?? 0) > 0) {
-					controller.enqueue(data);
-				} else {
-					chunks.push(data);
+			stream: createStream(),
+			async enqueue(chunk: T) {
+				while (pendingCount() >= maxPendingChunks) {
+					if (blockedWriters >= maxPendingChunks) {
+						throw new Error("PUSH event queue has too many blocked producers");
+					}
+					blockedWriters++;
+					try {
+						await new Promise<void>((resolve, reject) => {
+							spaceWaiters.push({ resolve, reject });
+						});
+					} finally {
+						blockedWriters--;
+					}
+				}
+				chunks.push(chunk);
+				if (controller && pullReady) {
+					const ready = pullReady;
+					pullReady = undefined;
+					const next = chunks[head]!;
+					chunks[head++] = undefined;
+					if (head === chunks.length) {
+						chunks.length = 0;
+						head = 0;
+					} else compactQueue();
+					controller.enqueue(next);
+					releaseWriter();
+					ready();
 				}
 			},
 			close() {
 				controller?.close();
 				controller = null;
-				this.renew();
+				pullReady?.();
+				pullReady = undefined;
+				rejectBlockedWriters(new Error("PUSH event stream was closed"));
+				closeConnection();
 			},
 			error(err: LooseType) {
 				controller?.error(err);
 				controller = null;
+				pullReady?.();
+				pullReady = undefined;
+				rejectBlockedWriters(
+					err instanceof Error ? err : new Error(String(err)),
+				);
 				this.renew();
 			},
 			renew() {
-				this.stream = new ReadableStream<T>({
-					start(c) {
-						controller = c;
-					},
-					pull(c) {
-						if (chunks.length) {
-							c.enqueue(chunks.shift()!);
-						}
-					},
-					cancel() {
-						controller = null;
-					},
-				}, {
-					highWaterMark: 200,
-					size() {
-						return 1;
-					},
-				});
+				this.stream = createStream();
 			},
 		};
 		return writer;
@@ -173,7 +227,7 @@ export class ConnManager {
 		conn: Conn,
 		serviceType: number,
 		kwargs: Record<string, LooseType> = {},
-	): Promise<{ payload: Uint8Array<ArrayBuffer>; id: number; }> {
+	): Promise<{ payload: Uint8Array<ArrayBuffer>; id: number }> {
 		this.log("buildAndSendSignOnRequest", { serviceType, kwargs });
 		const cl = this.client;
 		const id = Object.keys(this.signOnRequests).length + 1;
@@ -253,8 +307,10 @@ export class ConnManager {
 				const { subscription: { subscriptionId }, events, syncToken } =
 					resp.success;
 
-				this.client.log("SquareService_fetchMyEvents_result", {
-					res: resp.success,
+				this.log("SquareService_fetchMyEvents_result", {
+					events: Array.isArray(resp.success.events)
+						? resp.success.events.length
+						: 0,
 				});
 
 				if (!Array.isArray(events)) {
@@ -275,7 +331,7 @@ export class ConnManager {
 				}
 
 				for (const ev of events) {
-					this.sqStream.enqueue(ev);
+					await this.sqStream.enqueue(ev);
 				}
 
 				this.client.poll.sync.square = syncToken;
@@ -297,7 +353,7 @@ export class ConnManager {
 				let detectedMethod = methodName;
 				try {
 					const proto = new TMoreCompactProtocol(Buffer.from(data));
-					parsed = <LooseType>{
+					parsed = <LooseType> {
 						data: proto.res,
 						_info: {
 							fname: detectedMethod,
@@ -328,7 +384,10 @@ export class ConnManager {
 					const res: sync_result = parsed.data;
 					const response = res.success;
 
-					this.client.log("sync_result", { res });
+					this.log("sync_result", {
+						operations: response.operationResponse?.operations?.length ?? 0,
+						revision: response.fullSyncResponse?.nextRevision,
+					});
 
 					if (
 						response.fullSyncResponse &&
@@ -337,31 +396,23 @@ export class ConnManager {
 						this.client.poll.sync.talk.revision =
 							response.fullSyncResponse.nextRevision;
 					}
-					if (
-						response.operationResponse &&
-						response.operationResponse.globalEvents &&
-						response.operationResponse.globalEvents.lastRevision
-					) {
-						this.client.poll.sync.talk.globalRev =
-							response.operationResponse.globalEvents.lastRevision;
-					}
-					if (
-						response.operationResponse &&
-						response.operationResponse.individualEvents &&
-						response.operationResponse.individualEvents.lastRevision
-					) {
-						this.client.poll.sync.talk.individualRev =
-							response.operationResponse.individualEvents
-								.lastRevision;
-					}
+					const operationResponse = response.operationResponse;
 					if (
 						(response.operationResponse &&
 							response.operationResponse.operations)
 					) {
 						for (const event of response.operationResponse.operations) {
+							await this.opStream.enqueue(event);
 							this.client.poll.sync.talk.revision = event.revision;
-							this.opStream.enqueue(event);
 						}
+					}
+					if (operationResponse?.globalEvents?.lastRevision) {
+						this.client.poll.sync.talk.globalRev =
+							operationResponse.globalEvents.lastRevision;
+					}
+					if (operationResponse?.individualEvents?.lastRevision) {
+						this.client.poll.sync.talk.individualRev =
+							operationResponse.individualEvents.lastRevision;
 					}
 
 					this.client.emit("update:syncdata", this.client.poll.sync);
@@ -437,8 +488,11 @@ export class ConnManager {
 		}
 	}
 
-	async _OnPushResponse(pushFrame: LegyH2PushFrame) {
-		this.log("_OnPushResponse", pushFrame);
+	async _OnPushResponse(pushFrame: LegyH2PushFrame): Promise<void> {
+		this.log("_OnPushResponse", {
+			serviceType: pushFrame.serviceType,
+			payloadBytes: pushFrame.pushPayload?.length ?? 0,
+		});
 		if (pushFrame.serviceType === 3 && pushFrame.pushPayload) {
 			try {
 				this.subscriptionId = this.client.thrift.readThriftStruct(
@@ -453,7 +507,7 @@ export class ConnManager {
 				const { events, syncToken, subscription } = res;
 
 				for (const ev of events) {
-					this.sqStream.enqueue(ev);
+					await this.sqStream.enqueue(ev);
 				}
 				this.client.poll.sync.square = syncToken;
 				this.client.emit("update:syncdata", this.client.poll.sync);
