@@ -54,12 +54,20 @@ is configured. Re-run `deno run -A scripts/bench-planet-decode.ts` to compare.
 
 ## Upstream issue status
 
-- [LINEJS #198](https://github.com/evex-dev/linejs/issues/198): reply
-  transaction correlation has local regression coverage. A live one-to-one
-  call still needs independent device verification.
-- [LINEJS #211](https://github.com/evex-dev/linejs/issues/211): key-generation
-  selection fixes are present in the local code and covered by tests. The
-  original reporter's account remains unverified; historical key material is
-  preserved.
-- At the upstream check on 2026-10-27, there were no open pull requests.
-  Recheck GitHub before tagging a release.
+- [LINEJS #198](https://github.com/evex-dev/linejs/issues/198): the reply
+  transaction and remote-release changes are in upstream
+  [PR #241](https://github.com/evex-dev/linejs/pull/241), merged 2026-10-10,
+  and included in this fork's base. Synthetic UDP/SRTP regressions pass. The
+  reported 60-second live result used an experimental JavaScript vendor; a
+  separate live phone call using the upstream TypeScript implementation has
+  not been confirmed, so the issue remains open.
+- [LINEJS #211](https://github.com/evex-dev/linejs/issues/211): upstream
+  [PR #236](https://github.com/evex-dev/linejs/pull/236), merged 2026-09-06,
+  includes generation-aware group-key lookup and the multi-entry E2EE login
+  keychain repair. The regression cases pass locally, but the original
+  reporter's account remains unverified. Preserve historical key material;
+  do not force key registration or clear storage.
+- These are the only open LINEJS issues in the 2026-10-29 check. Open upstream
+  pull requests: none. The unresolved account/device confirmations require
+  access to the affected account or a real phone pair; synthetic tests cannot
+  establish those results.
