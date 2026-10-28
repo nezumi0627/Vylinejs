@@ -11,6 +11,8 @@ import type { BaseService } from "../types.ts";
 import type { LooseType } from "@evex/loose-types";
 import { type LiffMessage, validateLiffMessages } from "./messages.ts";
 
+const LIFF_TOKEN_CACHE_LIMIT = 128;
+
 export class LiffService implements BaseService {
 	static readonly LINE_LIFF_ENDPOINT = "https://api.line.me/message/v3/share";
 	static readonly CONSENT_API_URL =
@@ -179,16 +181,18 @@ export class LiffService implements BaseService {
 			...options,
 		};
 		validateLiffMessages(messages);
-		const cacheKey = JSON.stringify([liffId, to]);
-		if (!this.liffTokenCache[cacheKey] || forceIssue) {
+		const cacheKey = JSON.stringify([this.client.profile?.mid, liffId, to]);
+		const cachedToken = this.liffTokenCache[cacheKey];
+		if (!cachedToken || forceIssue) {
 			token = await this.getLiffToken({
 				chatMid: to,
 				liffId,
 				tryConsent,
 			});
-			this.liffTokenCache[cacheKey] = token;
+			this.cacheLiffToken(cacheKey, token);
 		} else {
-			token = this.liffTokenCache[cacheKey];
+			token = cachedToken;
+			this.cacheLiffToken(cacheKey, token);
 		}
 
 		const liffHeaders = {
@@ -219,6 +223,15 @@ export class LiffService implements BaseService {
 			);
 		}
 		return responseBody;
+	}
+
+	private cacheLiffToken(key: string, token: string): void {
+		delete this.liffTokenCache[key];
+		this.liffTokenCache[key] = token;
+		const keys = Object.keys(this.liffTokenCache);
+		for (let i = 0; i < keys.length - LIFF_TOKEN_CACHE_LIMIT; i++) {
+			delete this.liffTokenCache[keys[i]];
+		}
 	}
 
 	private async tryConsentLiff(

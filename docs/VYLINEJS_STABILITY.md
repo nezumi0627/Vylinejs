@@ -21,6 +21,9 @@ and E2EE key history intact.
 E2EE key generations are retained for historical decryption. No automatic key
 eviction is performed.
 
+LIFF send-token caching is scoped to account MID, LIFF ID, and recipient, with
+a 128-entry LRU bound to cap memory on long-running clients.
+
 ## FileStorage measurement
 
 Run `deno run -A scripts/bench-file-storage.ts` to measure 30 reads and 5

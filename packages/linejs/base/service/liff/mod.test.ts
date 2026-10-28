@@ -55,6 +55,31 @@ Deno.test("sendLiff forceIssue refreshes only the selected LIFF token", async ()
 	assertEquals(issued, ["app-a", "app-b", "app-a"]);
 });
 
+Deno.test("sendLiff does not reuse a token after switching LINE accounts", async () => {
+	const client = {
+		profile: { mid: "u-account-a" },
+		fetch: () => Promise.resolve(new Response("{}")),
+	};
+	const service = new LiffService(client as never as BaseClient);
+	const issued: string[] = [];
+	service.getLiffToken = () => {
+		issued.push(client.profile.mid);
+		return Promise.resolve(`token-${client.profile.mid}`);
+	};
+	const send = () =>
+		service.sendLiff({
+			to: "u-recipient",
+			liffId: "app",
+			messages: [{ type: "text", text: "hello" }],
+		});
+
+	await send();
+	client.profile.mid = "u-account-b";
+	await send();
+
+	assertEquals(issued, ["u-account-a", "u-account-b"]);
+});
+
 Deno.test("sendLiff validates messages before requesting a LIFF token", async () => {
 	const service = new LiffService({
 		fetch: () => Promise.reject(new Error("fetch should not run")),
@@ -70,4 +95,30 @@ Deno.test("sendLiff validates messages before requesting a LIFF token", async ()
 		"at least one",
 	);
 	assertEquals(tokenRequested, false);
+});
+
+Deno.test("sendLiff bounds cached tokens for many recipient pairs", async () => {
+	const service = new LiffService({
+		fetch: () => Promise.resolve(new Response("{}")),
+	} as never as BaseClient);
+	service.getLiffToken = ({ chatMid }) => Promise.resolve(`token-${chatMid}`);
+
+	for (let i = 0; i < 160; i++) {
+		await service.sendLiff({
+			to: `u-recipient-${i}`,
+			liffId: "app",
+			messages: [{ type: "text", text: "hello" }],
+		});
+	}
+
+	assertEquals(Object.keys(service.liffTokenCache).length, 128);
+	assertEquals(
+		service.liffTokenCache[JSON.stringify([undefined, "app", "u-recipient-0"])],
+		undefined,
+	);
+	assertEquals(
+		service
+			.liffTokenCache[JSON.stringify([undefined, "app", "u-recipient-159"])],
+		"token-u-recipient-159",
+	);
 });
