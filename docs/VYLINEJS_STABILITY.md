@@ -47,6 +47,13 @@ delegating to its backing store. Complete login credential writes and paired
 E2EE group-key records use the batch API when available; older duck-typed
 storage adapters retain their sequential-write fallback.
 
+Storage migration previously called `set()` once per key. Migrating a
+MemoryStorage snapshot into FileStorage took 330.56 ms for 250 keys and
+1,194.11 ms for 1,000 keys. After routing the three built-in migration methods
+through `setMany()`, it took 3.11 ms and 5.38–7.71 ms, respectively. A
+10,000-key batch completed in 21.22 ms. Reproduce with
+`deno run -A scripts/bench-storage-migrate.ts [keyCount]`.
+
 ## Performance experiments
 
 Thrift serializer experiment (Deno 2.7.14 / Windows, 10,000 compact-protocol

@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { BaseStorage, type Storage } from "./base.ts";
+import { BaseStorage, persistMany, type Storage } from "./base.ts";
 
 const ENVELOPE_PREFIX = "linejs:encrypted:v1:";
 const IV_BYTES = 12;
@@ -78,13 +78,7 @@ export class EncryptedStorage extends BaseStorage {
 				}),
 			),
 		);
-		if (typeof this.backing.setMany === "function") {
-			await this.backing.setMany(encrypted);
-		} else {
-			for (const [key, value] of Object.entries(encrypted)) {
-				await this.backing.set(key, value);
-			}
-		}
+		await persistMany(this.backing, encrypted);
 	}
 
 	public async get(
@@ -151,8 +145,6 @@ export class EncryptedStorage extends BaseStorage {
 
 	public async migrate(storage: BaseStorage): Promise<void> {
 		const values = await this.getAll();
-		for (const [key, value] of Object.entries(values)) {
-			await storage.set(key, value);
-		}
+		await persistMany(storage, values);
 	}
 }

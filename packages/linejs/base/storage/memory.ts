@@ -1,4 +1,4 @@
-import { BaseStorage, type Storage } from "./base.ts";
+import { BaseStorage, persistMany, type Storage } from "./base.ts";
 
 /**
  * @lassdesc Mmemory Storage for LINE Client
@@ -49,12 +49,6 @@ export class MemoryStorage extends BaseStorage {
 	}
 
 	public async migrate(storage: BaseStorage): Promise<void> {
-		const kv = this.getAll();
-		for (const key in kv) {
-			if (Object.prototype.hasOwnProperty.call(kv, key)) {
-				const value = kv[key];
-				await storage.set(key, value);
-			}
-		}
+		await persistMany(storage, this.getAll());
 	}
 }

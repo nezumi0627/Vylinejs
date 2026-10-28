@@ -3,7 +3,7 @@ import * as fsp from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import process from "node:process";
-import { BaseStorage, type Storage } from "./base.ts";
+import { BaseStorage, persistMany, type Storage } from "./base.ts";
 
 interface FileState {
 	data: Record<Storage["Key"], Storage["Value"]>;
@@ -223,11 +223,7 @@ export class FileStorage extends BaseStorage {
 
 	public async migrate(storage: BaseStorage): Promise<void> {
 		const kv = await this.getAll();
-		for (const key in kv) {
-			if (Object.prototype.hasOwnProperty.call(kv, key)) {
-				await storage.set(key, kv[key]);
-			}
-		}
+		await persistMany(storage, kv);
 	}
 }
 
