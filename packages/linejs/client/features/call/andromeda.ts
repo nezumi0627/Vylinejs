@@ -46,6 +46,11 @@ export interface AndromedaTransportOpts {
 
 type UdpSocket = DgramSocket;
 
+interface PendingSipReceive {
+	resolve(message: Uint8Array): void;
+	reject(error: Error): void;
+}
+
 /** Endpoint extracted from a CallRoute. SIP signaling + media live on
  *  the same UDP host:port for LINE; SRTP packets flow back over RTP-
  *  established socket pairs after the SDP answer. */
@@ -85,7 +90,7 @@ export class AndromedaTransport implements CallTransport {
 	#sock?: UdpSocket;
 	#route?: LINETypes.CallRoute;
 	#cseq = 0;
-	#pending: ((msg: Uint8Array) => void)[] = [];
+	#pending: PendingSipReceive[] = [];
 	#sipFrom?: string;
 	#sipFromTag?: string;
 	#callId?: string;
@@ -136,12 +141,12 @@ export class AndromedaTransport implements CallTransport {
 				u8[0] >= 0x41 && u8[0] <= 0x5a && u8.includes(0x20);
 			if (isSip) {
 				const w = this.#pending.shift();
-				if (w) w(u8);
+				if (w) w.resolve(u8);
 			} else if (this.#rtp && rinfo.port === this.#rtp.port) {
 				this.#enqueueRtp(u8);
 			} else {
 				const w = this.#pending.shift();
-				if (w) w(u8);
+				if (w) w.resolve(u8);
 			}
 		});
 		await this.register();
@@ -165,6 +170,9 @@ export class AndromedaTransport implements CallTransport {
 		this.#closed = true;
 		this.#rtpQueue.clear();
 		for (const waiter of this.#rtpWaiters.splice(0)) waiter(null);
+		for (const waiter of this.#pending.splice(0)) {
+			waiter.reject(new Error("SIP transport closed"));
+		}
 		try {
 			await this.bye();
 		} catch { /* dialog may not exist */ }
@@ -610,13 +618,25 @@ export class AndromedaTransport implements CallTransport {
 	}
 
 	#receive(): Promise<Uint8Array> {
+		if (this.#closed) return Promise.reject(new Error("SIP transport closed"));
 		const timeout = this.#opts.timeoutMs ?? 5000;
 		return new Promise<Uint8Array>((res, rj) => {
-			const t = setTimeout(() => rj(new Error("SIP receive timeout")), timeout);
-			this.#pending.push((buf) => {
-				clearTimeout(t);
-				res(buf);
-			});
+			const waiter: PendingSipReceive = {
+				resolve(message) {
+					clearTimeout(timer);
+					res(message);
+				},
+				reject(error) {
+					clearTimeout(timer);
+					rj(error);
+				},
+			};
+			const timer = setTimeout(() => {
+				const index = this.#pending.indexOf(waiter);
+				if (index !== -1) this.#pending.splice(index, 1);
+				waiter.reject(new Error("SIP receive timeout"));
+			}, timeout);
+			this.#pending.push(waiter);
 		});
 	}
 }
