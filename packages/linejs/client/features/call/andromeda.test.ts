@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { Buffer } from "node:buffer";
 import dgram from "node:dgram";
 import { AndromedaTransport } from "./andromeda.ts";
@@ -82,6 +82,94 @@ Deno.test("AndromedaTransport.register: 401 → digest → 200 against mock cscf
 	}
 });
 
+Deno.test("AndromedaTransport removes a timed-out SIP waiter before retry", async () => {
+	const sock = dgram.createSocket("udp4");
+	let requests = 0;
+	sock.on("message", (buf, rinfo) => {
+		requests++;
+		if (requests === 1) return;
+		const sip = parseSip(new Uint8Array(buf));
+		const status = requests === 2 ? 401 : 200;
+		const headers: Record<string, string> = {
+			Via: sip.headers["Via"],
+			From: sip.headers["From"],
+			To: `${sip.headers["To"]};tag=mockserver`,
+			"Call-ID": sip.headers["Call-ID"],
+			CSeq: sip.headers["CSeq"],
+			"Content-Length": "0",
+		};
+		if (status === 401) {
+			headers["WWW-Authenticate"] =
+				`Digest realm="mock", nonce="retry", qop="auth", algorithm=MD5`;
+		}
+		const response = buildSip({
+			startLine: status === 401 ? "SIP/2.0 401 Unauthorized" : "SIP/2.0 200 OK",
+			headers,
+			body: "",
+		});
+		sock.send(Buffer.from(response), rinfo.port, rinfo.address);
+	});
+	const port = await new Promise<number>((resolve) => {
+		sock.bind({ address: "127.0.0.1", port: 0 }, () => {
+			resolve((sock.address() as { port: number }).port);
+		});
+	});
+	const transport = new AndromedaTransport({
+		localMid: "u-timeout-test",
+		timeoutMs: 30,
+	});
+	try {
+		await assertRejects(() =>
+			transport.connect({
+				route: {
+					voipAddress: "127.0.0.1",
+					voipUdpPort: port,
+					fromToken: "secret-pw",
+				} as never,
+			})
+		);
+		assertEquals(await transport.register(), 200);
+		assertEquals(requests, 3);
+	} finally {
+		await transport.close();
+		await new Promise<void>((resolve) => sock.close(() => resolve()));
+	}
+});
+
+Deno.test("AndromedaTransport.close cancels a pending SIP receive", async () => {
+	const sock = dgram.createSocket("udp4");
+	let received!: () => void;
+	const requestReceived = new Promise<void>((resolve) => received = resolve);
+	sock.on("message", () => received());
+	const port = await new Promise<number>((resolve) => {
+		sock.bind({ address: "127.0.0.1", port: 0 }, () => {
+			resolve((sock.address() as { port: number }).port);
+		});
+	});
+	const transport = new AndromedaTransport({
+		localMid: "u-close-test",
+		timeoutMs: 2000,
+	});
+	const connecting = transport.connect({
+		route: {
+			voipAddress: "127.0.0.1",
+			voipUdpPort: port,
+			fromToken: "secret-pw",
+		} as never,
+	});
+	const connectionFailure = assertRejects(() => connecting);
+	try {
+		await requestReceived;
+		const started = performance.now();
+		await transport.close();
+		await connectionFailure;
+		assert(performance.now() - started < 250);
+	} finally {
+		await transport.close();
+		await new Promise<void>((resolve) => sock.close(() => resolve()));
+	}
+});
+
 async function spawnMockUas(): Promise<{
 	host: string;
 	port: number;
@@ -103,7 +191,8 @@ async function spawnMockUas(): Promise<{
 					To: `${sip.headers["To"]};tag=mock`,
 					"Call-ID": sip.headers["Call-ID"],
 					CSeq: sip.headers["CSeq"],
-					"WWW-Authenticate": `Digest realm="mock", nonce="n1", qop="auth", algorithm=MD5`,
+					"WWW-Authenticate":
+						`Digest realm="mock", nonce="n1", qop="auth", algorithm=MD5`,
 					"Content-Length": "0",
 				},
 				body: "",
@@ -130,7 +219,9 @@ async function spawnMockUas(): Promise<{
 			const remoteKey = new Uint8Array(30);
 			for (let i = 0; i < 30; i++) remoteKey[i] = (i + 99) & 0xff;
 			let b64 = "";
-			for (let i = 0; i < remoteKey.length; i++) b64 += String.fromCharCode(remoteKey[i]);
+			for (let i = 0; i < remoteKey.length; i++) {
+				b64 += String.fromCharCode(remoteKey[i]);
+			}
 			const keyB64 = btoa(b64);
 			const answer = [
 				"v=0",
