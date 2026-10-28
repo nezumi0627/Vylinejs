@@ -1,9 +1,9 @@
-import { Buffer } from "node:buffer";
-
 export const COMPACT_PLAIN_MESSAGE_ENDPOINT = "/CA5";
 export const COMPACT_E2EE_MESSAGE_ENDPOINT = "/ECA5";
 
 export type CompactMessageType = 2 | 5 | 6;
+
+const compactTextEncoder = new TextEncoder();
 
 export interface CompactMessageResponse {
 	sequenceId: number;
@@ -113,17 +113,40 @@ export function decodeCompactMessageResponse(
 }
 
 export function encodeCompactText(text: string): Uint8Array {
-	const utf8 = Buffer.concat([
-		Buffer.from([0xef, 0xbb, 0xbf]),
-		Buffer.from(text, "utf8"),
-	]);
-	const utf16 = Buffer.allocUnsafe(2 + text.length * 2);
+	const utf8Length = getUtf8ByteLength(text);
+	const utf16Length = 2 + text.length * 2;
+	if (utf8Length + 3 <= utf16Length) {
+		const utf8 = new Uint8Array(utf8Length + 3);
+		utf8.set([0xef, 0xbb, 0xbf]);
+		compactTextEncoder.encodeInto(text, utf8.subarray(3));
+		return utf8;
+	}
+	const utf16 = new Uint8Array(utf16Length);
 	utf16[0] = 0xff;
 	utf16[1] = 0xfe;
 	for (let i = 0; i < text.length; i++) {
-		utf16.writeUInt16LE(text.charCodeAt(i), 2 + i * 2);
+		const codeUnit = text.charCodeAt(i);
+		utf16[2 + i * 2] = codeUnit & 0xff;
+		utf16[3 + i * 2] = codeUnit >>> 8;
 	}
-	return utf8.length > utf16.length ? utf16 : utf8;
+	return utf16;
+}
+
+function getUtf8ByteLength(text: string): number {
+	let length = 0;
+	for (let i = 0; i < text.length; i++) {
+		const codeUnit = text.charCodeAt(i);
+		if (codeUnit <= 0x7f) length++;
+		else if (codeUnit <= 0x7ff) length += 2;
+		else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+			const low = text.charCodeAt(i + 1);
+			if (low >= 0xdc00 && low <= 0xdfff) {
+				length += 4;
+				i++;
+			} else length += 3;
+		} else length += 3;
+	}
+	return length;
 }
 
 export function writeCompactI32(out: number[], value: number): void {

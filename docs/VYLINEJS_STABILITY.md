@@ -88,6 +88,13 @@ internal AES-CM processing reduced a paired-run median from 53.5 ms to 44.0 ms
 (about 18%). Results vary by run; reproduce with
 `deno run -A scripts/bench-srtp.ts 1000`.
 
+Compact text encoding (Deno 2.7.14 / Windows, 500 encodes per run, five runs)
+now measures UTF-8 length before choosing an encoding, then allocates only the
+selected representation. For 13,000 ASCII characters, the median fell from
+56.8 ms to 22.6 ms; for 7,000 Japanese characters, from 70.4 ms to 25.0 ms;
+and for mixed text, from 70.0 ms to 33.6 ms. Reproduce with
+`deno run -A scripts/bench-compact-text.ts`.
+
 Group audio mixing now validates decoded PCM in one pass and removes expired
 jitter chunks in place. The transport skips receive/RTP debug-record creation
 when no debug callback is configured. Andromeda removes timed-out SIP waiters

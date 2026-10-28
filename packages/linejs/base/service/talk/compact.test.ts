@@ -21,6 +21,10 @@ Deno.test("encodeCompactText chooses UTF-16LE with BOM when shorter", () => {
 	assertEquals(hex(encodeCompactText("あ")), "fffe4230");
 });
 
+Deno.test("encodeCompactText preserves UTF-16 surrogate pairs", () => {
+	assertEquals(hex(encodeCompactText("😀")), "fffe3dd800de");
+});
+
 Deno.test("packCompactPlainMessage writes type, MID type, seq, MID bytes, text, and suffix", () => {
 	const mid = "u" + "00".repeat(16);
 	const packed = packCompactPlainMessage(0, mid, "hi");
