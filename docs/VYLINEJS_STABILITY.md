@@ -92,7 +92,7 @@ The SRTP packet path now passes typed-array views directly to Node crypto,
 removing per-packet `Buffer.from()` copies for keys, payloads, and HMAC input,
 plus the intermediate `Buffer.concat()` and output copy. Against the previous
 implementation, two 1,000-packet paired-run medians improved from 37.1/38.9 ms
-to 33.3/32.6 ms (about 12–16%). These local microbenchmarks are sensitive to
+to 33.3/32.6 ms (about 10–16%). These local microbenchmarks are sensitive to
 runtime load; reproduce with `deno run -A scripts/bench-srtp.ts 1000`.
 
 Compact text encoding (Deno 2.7.14 / Windows, 500 encodes per run, five runs)
