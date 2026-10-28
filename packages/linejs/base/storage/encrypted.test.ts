@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
+import type { Storage } from "./base.ts";
 import { EncryptedStorage } from "./encrypted.ts";
 import { MemoryStorage } from "./memory.ts";
 
@@ -20,6 +21,32 @@ Deno.test("EncryptedStorage encrypts values and round-trips them", async () => {
 	assert(stored.startsWith("linejs:encrypted:v1:"));
 	assert(!stored.includes("secret-token"));
 	assertEquals(await storage.get("accessToken"), "secret-token");
+});
+
+Deno.test("EncryptedStorage encrypts and reloads a batch of values", async () => {
+	class CountingStorage extends MemoryStorage {
+		setManyCalls = 0;
+		override async setMany(
+			entries: Record<string, Storage["Value"]>,
+		): Promise<void> {
+			this.setManyCalls++;
+			await super.setMany(entries);
+		}
+	}
+	const backing = new CountingStorage();
+	const storage = new EncryptedStorage(backing, await makeKey());
+	await storage.setMany({ accessToken: "access-secret", expire: 1234 });
+
+	assertEquals(await storage.getAll(), {
+		accessToken: "access-secret",
+		expire: 1234,
+	});
+	assert(
+		String(await backing.get("accessToken")).startsWith(
+			"linejs:encrypted:v1:",
+		),
+	);
+	assertEquals(backing.setManyCalls, 1);
 });
 
 Deno.test("EncryptedStorage detects tampering and wrong keys", async () => {

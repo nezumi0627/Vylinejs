@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { FileStorage } from "./file.ts";
 
 Deno.test("FileStorage shares updates between instances without exposing mutable state", async () => {
@@ -26,6 +26,61 @@ Deno.test("FileStorage serializes concurrent writes and reloads persisted state"
 		const reloaded = new FileStorage(path);
 		assertEquals(Object.keys(await reloaded.getAll()).length, 20);
 		assertEquals(await reloaded.get("key19"), 19);
+	} finally {
+		await Deno.remove(path);
+	}
+});
+
+Deno.test("FileStorage setMany persists a batch and reloads all entries", async () => {
+	const path = await Deno.makeTempFile();
+	try {
+		const storage = new FileStorage(path);
+		await storage.setMany({
+			accessToken: "access",
+			refreshToken: "refresh",
+			expire: 1234,
+		});
+
+		const reloaded = new FileStorage(path);
+		assertEquals(await reloaded.getAll(), {
+			accessToken: "access",
+			refreshToken: "refresh",
+			expire: 1234,
+		});
+	} finally {
+		await Deno.remove(path);
+	}
+});
+
+Deno.test("FileStorage setMany applies values over existing data", async () => {
+	const path = await Deno.makeTempFile();
+	try {
+		const storage = new FileStorage(path);
+		await storage.set("keep", "existing");
+		await storage.setMany({ first: 1, second: 2 });
+		assertEquals(await storage.getAll(), {
+			keep: "existing",
+			first: 1,
+			second: 2,
+		});
+	} finally {
+		await Deno.remove(path);
+	}
+});
+
+Deno.test("FileStorage setMany leaves memory unchanged when normalization fails", async () => {
+	const path = await Deno.makeTempFile();
+	try {
+		const storage = new FileStorage(path);
+		await storage.set("first", "old");
+		const cyclic: Record<string, unknown> = {};
+		cyclic.self = cyclic;
+
+		await assertRejects(
+			() => storage.setMany({ first: "new", cyclic: cyclic as never }),
+			TypeError,
+		);
+		assertEquals(await storage.getAll(), { first: "old" });
 	} finally {
 		await Deno.remove(path);
 	}

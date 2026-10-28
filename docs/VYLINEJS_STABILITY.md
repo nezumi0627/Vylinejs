@@ -38,6 +38,14 @@ Reads use an in-process snapshot and check file metadata for external edits;
 writes preserve the JSON format and atomically replace the file. On POSIX,
 construction and every write restrict the credential file to owner read/write
 (mode `0600`), including files that were previously more permissive.
+For five updates in a 50,000-key file, five individual writes averaged 16.0 ms
+each (about 80 ms total); `FileStorage.setMany()` committed the same five
+updates in 15.9–16.5 ms across two runs. At 1,000 keys, five writes averaged
+1.41 ms each and the batch took 2.00 ms. The batch preserves the JSON file and
+uses one atomic replacement; encrypted storage batches encryption before
+delegating to its backing store. Complete login credential writes and paired
+E2EE group-key records use the batch API when available; older duck-typed
+storage adapters retain their sequential-write fallback.
 
 ## Performance experiments
 
@@ -53,6 +61,15 @@ PLANET decode experiment (same runtime, 20,000 representative INFO_REQ packets,
 had an 86.44 ms median; the single message parse had a 77.04 ms median (10.9%
 less time). Debug-only structural decoding remains available when a debug hook
 is configured. Re-run `deno run -A scripts/bench-planet-decode.ts` to compare.
+
+EVS3 reassembly experiment (Deno 2.7.14 / Windows, 64,000-byte VP8 frame,
+1,000-byte fragments, 500 frames per run, five runs): the current assembler
+had a 54.98 ms median. Caching parsed fragment offsets reduced repeated parsing
+in the code, but repeated candidate medians ranged from 53.11 to 54.20 ms and
+an earlier run measured 72.80 ms. This was within run-to-run noise, so the
+candidate was reverted. The reproducible workload is
+`deno run -A scripts/bench-evs3.ts`; the assembler round-trip regression test is
+`packages/linejs/client/features/call/planet/evs3.test.ts`.
 
 ## Upstream issue status
 

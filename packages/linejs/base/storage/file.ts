@@ -152,6 +152,36 @@ export class FileStorage extends BaseStorage {
 		});
 	}
 
+	public override async setMany(
+		entries: Record<Storage["Key"], Storage["Value"]>,
+	): Promise<void> {
+		const updates = Object.entries(entries).map(([key, value]) =>
+			[
+				key,
+				JSON.parse(JSON.stringify(value)) as Storage["Value"],
+			] as const
+		);
+		if (updates.length === 0) return;
+		await this.withLock(async () => {
+			await this.refreshLocked();
+			const previous = updates.map(([key]) => ({
+				key,
+				existed: Object.hasOwn(this.state.data, key),
+				value: this.state.data[key],
+			}));
+			for (const [key, value] of updates) this.state.data[key] = value;
+			try {
+				await this.persist(this.state.data);
+			} catch (error) {
+				for (const item of previous) {
+					if (item.existed) this.state.data[item.key] = item.value;
+					else delete this.state.data[item.key];
+				}
+				throw error;
+			}
+		});
+	}
+
 	public async get(key: Storage["Key"]): Promise<Storage["Value"] | undefined> {
 		await this.withLock(async () => await this.refreshLocked());
 		const value = this.state.data[key];

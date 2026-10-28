@@ -64,6 +64,57 @@ Deno.test("tryRefreshToken keeps the stored refreshToken when not rotated", asyn
 	stub.end();
 });
 
+Deno.test("login persists complete credentials through one storage batch", async () => {
+	const store = new Map<string, string | number>();
+	let setManyCalls = 0;
+	let setCalls = 0;
+	let onEnd = () => {};
+	const auth = new AuthService({
+		authToken: "old",
+		disabled: false,
+		on(_event: string, callback: () => void) {
+			onEnd = callback;
+		},
+		emit() {},
+		storage: {
+			get(key: string) {
+				return Promise.resolve(store.get(key));
+			},
+			set(key: string, value: string | number) {
+				setCalls++;
+				store.set(key, value);
+				return Promise.resolve();
+			},
+			setMany(entries: Record<string, string | number>) {
+				setManyCalls++;
+				for (const [key, value] of Object.entries(entries)) {
+					store.set(key, value);
+				}
+				return Promise.resolve();
+			},
+			delete(key: string) {
+				store.delete(key);
+				return Promise.resolve();
+			},
+		},
+	} as never);
+
+	await auth.saveAuthTokenCredential({
+		accessToken: "access",
+		refreshToken: "refresh",
+		expire: 1234,
+	});
+
+	assertEquals(setManyCalls, 1);
+	assertEquals(setCalls, 0);
+	assertEquals(Object.fromEntries(store), {
+		accessToken: "access",
+		refreshToken: "refresh",
+		expire: 1234,
+	});
+	onEnd();
+});
+
 Deno.test("a late refresh cannot overwrite credentials from a newer login", async () => {
 	const store = new Map<string, string | number>([["refreshToken", "rt-old"]]);
 	let releaseRefreshWrite!: () => void;
