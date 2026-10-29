@@ -7,6 +7,22 @@ the protocol and API foundation; portable protocol work from
 [Vyline](https://github.com/nezumi0627/vyline) is integrated here and can flow
 back upstream as focused pull requests.
 
+## Why Vylinejs
+
+- **Familiar API:** built on LINEJS, so existing concepts and usage stay familiar
+  wherever compatibility allows.
+- **Quick adaptation:** as an independent fork, Vylinejs can respond directly to
+  new LINE protocol changes and user requests, with frequent maintenance and
+  room to evolve its API when needed.
+- **Performance work:** hot paths are measured and optimized to reduce CPU time
+  and unnecessary allocations and copies. See the [stability notes](docs/VYLINEJS_STABILITY.md)
+  for benchmarks and their limits.
+- **Upstream-friendly:** improvements that are useful to LINEJS are sent back as
+  focused contributions.
+
+Vylinejs aims to combine LINEJS's familiar interface with the flexibility and
+short iteration cycle of an independently maintained fork.
+
 ```mermaid
 flowchart LR
     L[LINEJS upstream] --> VJ[Vylinejs: adaptation and repair]
