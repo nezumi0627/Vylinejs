@@ -9,6 +9,11 @@ import {
 import type { ConnManager, ReadableStreamWriter } from "./connManager.ts";
 import type { LooseType } from "@evex/loose-types";
 
+const MAX_SIGN_ON_RESPONSE_BYTES = 8 * 1024 * 1024;
+const MAX_SIGN_ON_RESPONSE_FRAGMENTS = 4096;
+const MAX_BUFFERED_SIGN_ON_RESPONSE_BYTES = 64 * 1024 * 1024;
+const MAX_BUFFERED_SIGN_ON_RESPONSE_FRAGMENTS = 8192;
+
 export class Conn {
 	manager: ConnManager;
 
@@ -17,7 +22,10 @@ export class Conn {
 	cacheData: Uint8Array = new Uint8Array(0);
 	private pendingChunks: Uint8Array[] = [];
 	private pendingLength = 0;
-	notFinPayloads: Record<number, Uint8Array> = {};
+	notFinPayloads: Record<number, Uint8Array[]> = Object.create(null);
+	private notFinPayloadLengths: Record<number, number> = Object.create(null);
+	private notFinPayloadFragments = 0;
+	private bufferedNotFinPayloadBytes = 0;
 	reqStream?: ReadableStreamWriter<Uint8Array> & { abort: AbortController };
 	resStream?: ReadableStream<Uint8Array>;
 	private _lastSendTime = 0;
@@ -297,13 +305,32 @@ export class Conn {
 				responsePayload,
 			);
 			if (packet.isFin) {
-				if (this.notFinPayloads[requestId]) {
-					const a = this.notFinPayloads[requestId];
-					const newPayload = new Uint8Array(a.length + responsePayload.length);
-					newPayload.set(a);
-					newPayload.set(responsePayload, a.length);
-					responsePayload = newPayload;
-					delete this.notFinPayloads[requestId];
+				const chunks = this.notFinPayloads[requestId];
+				const previousLength = this.notFinPayloadLengths[requestId] ?? 0;
+				const totalLength = previousLength + responsePayload.length;
+				const otherBufferedBytes = this.bufferedNotFinPayloadBytes -
+					previousLength;
+				if (totalLength > MAX_SIGN_ON_RESPONSE_BYTES) {
+					this.#clearNotFinPayload(requestId);
+					throw new RangeError("PUSH sign-on response exceeds byte limit");
+				}
+				if (
+					otherBufferedBytes + totalLength >
+						MAX_BUFFERED_SIGN_ON_RESPONSE_BYTES
+				) {
+					this.#clearAllNotFinPayloads();
+					throw new RangeError("PUSH connection exceeds response buffer limit");
+				}
+				if (chunks) {
+					const assembled = new Uint8Array(totalLength);
+					let offset = 0;
+					for (const chunk of chunks) {
+						assembled.set(chunk, offset);
+						offset += chunk.length;
+					}
+					assembled.set(responsePayload, offset);
+					responsePayload = assembled;
+					this.#clearNotFinPayload(requestId);
 				}
 				await this.manager.onSignOnResponse(requestId, isFin, responsePayload);
 			} else {
@@ -311,14 +338,33 @@ export class Conn {
 					`[PUSH] receives long data. requestId: ${requestId}, req=${req}`,
 					debugOnly,
 				);
-				if (!this.notFinPayloads[requestId]) {
-					this.notFinPayloads[requestId] = new Uint8Array(0);
+				const chunks = this.notFinPayloads[requestId] ?? [];
+				const previousLength = this.notFinPayloadLengths[requestId] ?? 0;
+				const totalLength = previousLength + responsePayload.length;
+				if (totalLength > MAX_SIGN_ON_RESPONSE_BYTES) {
+					this.#clearNotFinPayload(requestId);
+					throw new RangeError("PUSH sign-on response exceeds byte limit");
 				}
-				const prev = this.notFinPayloads[requestId];
-				const combined = new Uint8Array(prev.length + responsePayload.length);
-				combined.set(prev);
-				combined.set(responsePayload, prev.length);
-				this.notFinPayloads[requestId] = combined;
+				if (
+					chunks.length >= MAX_SIGN_ON_RESPONSE_FRAGMENTS ||
+					this.notFinPayloadFragments >=
+						MAX_BUFFERED_SIGN_ON_RESPONSE_FRAGMENTS
+				) {
+					this.#clearNotFinPayload(requestId);
+					throw new RangeError("PUSH sign-on response exceeds fragment limit");
+				}
+				if (
+					this.bufferedNotFinPayloadBytes + responsePayload.length >
+						MAX_BUFFERED_SIGN_ON_RESPONSE_BYTES
+				) {
+					this.#clearAllNotFinPayloads();
+					throw new RangeError("PUSH connection exceeds response buffer limit");
+				}
+				chunks.push(responsePayload.slice());
+				this.notFinPayloads[requestId] = chunks;
+				this.notFinPayloadLengths[requestId] = totalLength;
+				this.notFinPayloadFragments++;
+				this.bufferedNotFinPayloadBytes += responsePayload.length;
 			}
 		} else if (dt === 4) {
 			const pushType = dd[0];
@@ -363,12 +409,30 @@ export class Conn {
 	async close() {
 		await 0;
 		this._closed = true;
+		this.#clearAllNotFinPayloads();
 		try {
 			this.reqStream?.close();
 			this.reqStream?.abort.abort();
 		} catch (_e) {
 			// ignore
 		}
+	}
+
+	#clearNotFinPayload(requestId: number): void {
+		const chunks = this.notFinPayloads[requestId];
+		if (!chunks) return;
+		this.bufferedNotFinPayloadBytes -= this.notFinPayloadLengths[requestId] ??
+			0;
+		this.notFinPayloadFragments -= chunks.length;
+		delete this.notFinPayloads[requestId];
+		delete this.notFinPayloadLengths[requestId];
+	}
+
+	#clearAllNotFinPayloads(): void {
+		this.notFinPayloads = Object.create(null);
+		this.notFinPayloadLengths = Object.create(null);
+		this.notFinPayloadFragments = 0;
+		this.bufferedNotFinPayloadBytes = 0;
 	}
 }
 

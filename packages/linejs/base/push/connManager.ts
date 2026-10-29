@@ -42,6 +42,7 @@ export class ConnManager {
 	client: BaseClient;
 	conns: Conn[] = [];
 	currPingId = 0;
+	#nextSignOnRequestId = 1;
 	subscriptionIds: Record<number, number> = {};
 	signOnRequests: Record<number, LooseType[]> = {};
 	onPingCallback: (id: number) => void;
@@ -197,6 +198,7 @@ export class ConnManager {
 	): Promise<Conn> {
 		const _conn = new Conn(this);
 		this.signOnRequests = {};
+		this.#nextSignOnRequestId = 1;
 		if (state === 1) {
 			this.conns[0] = _conn;
 			this.authToken = this.client.authToken!;
@@ -230,7 +232,7 @@ export class ConnManager {
 	): Promise<{ payload: Uint8Array<ArrayBuffer>; id: number }> {
 		this.log("buildAndSendSignOnRequest", { serviceType, kwargs });
 		const cl = this.client;
-		const id = Object.keys(this.signOnRequests).length + 1;
+		const id = this.#allocateSignOnRequestId();
 		const idBuf = new Uint8Array(2);
 		idBuf[0] = (id >> 8) & 0xff;
 		idBuf[1] = id & 0xff;
@@ -266,8 +268,22 @@ export class ConnManager {
 		this.log(
 			`[H2][PUSH] send sign-on-request. requestId:${id}, service:${serviceType}`,
 		);
-		await conn.writeRequest(2, header);
+		try {
+			await conn.writeRequest(2, header);
+		} catch (error) {
+			delete this.signOnRequests[id];
+			throw error;
+		}
 		return { payload: header, id };
+	}
+
+	#allocateSignOnRequestId(): number {
+		for (let attempts = 0; attempts < 0x7fff; attempts++) {
+			const id = this.#nextSignOnRequestId;
+			this.#nextSignOnRequestId = id === 0x7fff ? 1 : id + 1;
+			if (!(id in this.signOnRequests)) return id;
+		}
+		throw new Error("PUSH has no available sign-on request IDs");
 	}
 
 	async _OnSignOnResponse(
@@ -485,6 +501,8 @@ export class ConnManager {
 			}
 		} catch (_e) {
 			return;
+		} finally {
+			if (isFin) delete this.signOnRequests[reqId];
 		}
 	}
 

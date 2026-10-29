@@ -1,4 +1,4 @@
-import { assertEquals, assertStrictEquals } from "@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "@std/assert";
 import { ConnManager } from "./connManager.ts";
 
 interface LogEntry {
@@ -227,4 +227,44 @@ Deno.test("push stream preserves queued events across reader cancellation", asyn
 	assertEquals(await nextReader.read(), { value: 1, done: false });
 	assertEquals(await nextReader.read(), { value: 2, done: false });
 	await nextReader.cancel();
+});
+
+Deno.test("sign-on request IDs are released after final response", async () => {
+	const stub = stubClient({});
+	const manager = new ConnManager(stub.client as never);
+	const conn = { writeRequest: () => Promise.resolve() };
+	const first = await manager.buildAndSendSignOnRequest(conn as never, 99);
+	assertEquals(first.id, 1);
+	assertEquals(manager.signOnRequests[first.id]?.[0], 99);
+
+	await manager._OnSignOnResponse(first.id, true, new Uint8Array());
+	assertEquals(manager.signOnRequests[first.id], undefined);
+	const second = await manager.buildAndSendSignOnRequest(conn as never, 99);
+	assertEquals(second.id, 2);
+});
+
+Deno.test("sign-on request write failures release their request ID", async () => {
+	const manager = new ConnManager(stubClient({}).client as never);
+	await assertRejects(
+		() =>
+			manager.buildAndSendSignOnRequest({
+				writeRequest: () => Promise.reject(new Error("write failed")),
+			} as never, 99),
+		Error,
+		"write failed",
+	);
+	assertEquals(Object.keys(manager.signOnRequests), []);
+});
+
+Deno.test("sign-on request IDs wrap and reuse an available 15-bit ID", async () => {
+	const manager = new ConnManager(stubClient({}).client as never);
+	const conn = { writeRequest: () => Promise.resolve() };
+	let lastId = 0;
+	for (let i = 0; i < 0x7fff; i++) {
+		lastId = (await manager.buildAndSendSignOnRequest(conn as never, 99)).id;
+	}
+	assertEquals(lastId, 0x7fff);
+	delete manager.signOnRequests[1];
+	const reused = await manager.buildAndSendSignOnRequest(conn as never, 99);
+	assertEquals(reused.id, 1);
 });

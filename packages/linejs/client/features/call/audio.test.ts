@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
 	bufferSink,
 	bufferSource,
@@ -48,6 +48,19 @@ Deno.test("bufferSource respects abort signal", async () => {
 		if (n === 3) ctrl.abort();
 	}
 	assertEquals(n, 3);
+});
+
+Deno.test("bufferSource rejects invalid frame geometry", () => {
+	for (
+		const options of [
+			{ samples: new Int16Array(1), sampleRate: 0 },
+			{ samples: new Int16Array(1), sampleRate: 16000, channels: 0 },
+			{ samples: new Int16Array(1), sampleRate: 16000, frameDurationMs: 0 },
+			{ samples: new Int16Array(1), sampleRate: Number.NaN },
+		]
+	) {
+		assertThrows(() => bufferSource(options), RangeError);
+	}
 });
 
 Deno.test("streamSource forwards frames from a ReadableStream", async () => {
@@ -378,4 +391,42 @@ Deno.test("stub assertions: streamSource cancels when aborted", async () => {
 		if (n > 10) break;
 	}
 	assert(cancelled);
+});
+
+Deno.test("streamSource handles a signal aborted before iteration", async () => {
+	let canceled = false;
+	const stream = new ReadableStream<PcmFrame>({
+		pull() {
+			return new Promise<void>(() => {});
+		},
+		cancel() {
+			canceled = true;
+		},
+	});
+	const controller = new AbortController();
+	controller.abort();
+	const reading = (async () => {
+		for await (
+			const _ of streamSource(stream).frames({
+				signal: controller.signal,
+			})
+		) {
+			throw new Error("aborted stream yielded a frame");
+		}
+	})();
+	let timeoutId: number | undefined;
+	try {
+		await Promise.race([
+			reading,
+			new Promise<never>((_, reject) => {
+				timeoutId = setTimeout(
+					() => reject(new Error("aborted stream hung")),
+					100,
+				);
+			}),
+		]);
+	} finally {
+		if (timeoutId !== undefined) clearTimeout(timeoutId);
+	}
+	assert(canceled);
 });

@@ -1,4 +1,9 @@
-import { assert, assertEquals, assertInstanceOf } from "@std/assert";
+import {
+	assert,
+	assertEquals,
+	assertInstanceOf,
+	assertRejects,
+} from "@std/assert";
 import { Conn } from "./conn.ts";
 
 // `Conn.new` races the connect against a 300 ms fallback timer that stays
@@ -153,4 +158,48 @@ Deno.test("Conn reassembles byte-fragmented PUSH frames with one final copy", as
 		await conn.onDataReceived(new Uint8Array([byte]));
 	}
 	assertEquals(received, [{ type: 5, payload: [9, 8, 7, 6] }]);
+});
+
+Deno.test("Conn bounds fragmented sign-on payloads and frees rejected fragments", async () => {
+	const { manager } = stubManager(() => Promise.resolve(new Response(null)));
+	const conn = new Conn(manager as never);
+	const maxResponseBytes = 8 * 1024 * 1024;
+	const fragment = new Uint8Array(0xffff - 2);
+	const payload = new Uint8Array(fragment.length + 2);
+	payload[1] = 1;
+	payload.set(fragment, 2);
+
+	for (
+		let size = 0;
+		size + fragment.length <= maxResponseBytes;
+		size += fragment.length
+	) {
+		await conn.onPacketReceived(3, payload);
+	}
+	await assertRejects(
+		() => conn.onPacketReceived(3, payload),
+		RangeError,
+		"limit",
+	);
+	assertEquals(Object.keys(conn.notFinPayloads), []);
+	await conn.close();
+});
+
+Deno.test("Conn assembles sign-on fragments and releases the response buffer", async () => {
+	const { manager } = stubManager(() => Promise.resolve(new Response(null)));
+	const received: Uint8Array[] = [];
+	const testManager = {
+		...manager,
+		onSignOnResponse: (_id: number, _isFin: boolean, data: Uint8Array) => {
+			received.push(data);
+			return Promise.resolve();
+		},
+	};
+	const conn = new Conn(testManager as never);
+	await conn.onPacketReceived(3, new Uint8Array([0, 1, 4, 5, 6, 7, 8]));
+	await conn.onPacketReceived(3, new Uint8Array([0x80, 1, 1, 2, 3]));
+
+	assertEquals(Array.from(received[0]), [4, 5, 6, 7, 8, 1, 2, 3]);
+	assertEquals(Object.keys(conn.notFinPayloads), []);
+	await conn.close();
 });
