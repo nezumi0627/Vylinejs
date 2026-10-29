@@ -18,6 +18,44 @@ Deno.test("LEGY header codec round-trips headers and body", () => {
 	assertEquals([...decoded.data], [1, 2, 3]);
 });
 
+Deno.test("LEGY header codec preserves the wire bytes", () => {
+	assertEquals(
+		[...encodeLegyHeaders({ "x-lt": "token", "x-lpqs": "/S4" })],
+		[
+			0x00,
+			0x1c,
+			0x00,
+			0x02,
+			0x00,
+			0x04,
+			0x78,
+			0x2d,
+			0x6c,
+			0x74,
+			0x00,
+			0x05,
+			0x74,
+			0x6f,
+			0x6b,
+			0x65,
+			0x6e,
+			0x00,
+			0x06,
+			0x78,
+			0x2d,
+			0x6c,
+			0x70,
+			0x71,
+			0x73,
+			0x00,
+			0x03,
+			0x2f,
+			0x53,
+			0x34,
+		],
+	);
+});
+
 Deno.test("xxhash32 matches canonical empty input", () => {
 	assertEquals(xxhash32(new Uint8Array()), 0x02cc5d05);
 });

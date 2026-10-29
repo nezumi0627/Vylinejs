@@ -28,10 +28,10 @@ LINE VOOM ended on 2026-09-30. Its old `client.voom`, `client.voomRest`, and
 `client.base.timeline` APIs remain temporarily for source compatibility, are
 marked deprecated, and now fail immediately without issuing tokens or making
 network requests. Remove their use from applications; there is no replacement
-  service announced. See [LINE's official shutdown notice](https://help2.line.me/line/smartphone?contentId=200000301&contentid=50000619&lang=ja).
-  The compatibility exports are planned for removal in a
-future major version. Generated protocol enums and fields remain where needed
-to decode historical LINE data.
+service announced. See [LINE's official shutdown notice](https://help2.line.me/line/smartphone?contentId=200000301&contentid=50000619&lang=ja).
+The compatibility exports are planned for removal in a future major version.
+Generated protocol enums and fields remain where needed to decode historical
+LINE data.
 
 ## FileStorage measurement
 
@@ -92,6 +92,14 @@ encrypt plus decrypt, five measured runs): static crypto imports and synchronous
 internal AES-CM processing reduced a paired-run median from 53.5 ms to 44.0 ms
 (about 18%). Results vary by run; reproduce with
 `deno run -A scripts/bench-srtp.ts 1000`.
+
+LEGY request encryption (Deno 2.7.14 / Windows, 1 KiB request bodies, 1,000
+mocked requests per run, two warm-ups and five measured runs; empty mocked
+responses): removing intermediate copies during header/payload assembly and
+wrapping the encrypted bytes as a view brought two run medians from
+116.1/111.9 ms to 97.3/97.1 ms (about 13–16%). The
+benchmark measures the request encryption path without network latency or
+response decryption. Reproduce with `deno run -A scripts/bench-legy.ts 1000`.
 
 The SRTP packet path now passes typed-array views directly to Node crypto,
 removing per-packet `Buffer.from()` copies for keys, payloads, and HMAC input,

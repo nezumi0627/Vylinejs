@@ -68,14 +68,17 @@ export class LegyEncryptedTransport {
 		if (access) {
 			innerHeaders["x-lt"] = resolveLineAccessToken(access);
 		}
-		const plaintext = Buffer.concat([
-			encodeLegyHeaders(innerHeaders),
-			body,
-		]);
 		const leInt = Number.parseInt(LEGY_LE, 10);
-		const payload = (leInt & 4) === 4
-			? Buffer.concat([Buffer.from([leInt]), plaintext])
-			: plaintext;
+		const encodedHeaders = encodeLegyHeaders(innerHeaders);
+		const prefixLength = (leInt & 4) === 4 ? 1 : 0;
+		const payload = Buffer.allocUnsafe(
+			prefixLength + encodedHeaders.length + body.length,
+		);
+		let payloadOffset = 0;
+		if (prefixLength) payload[payloadOffset++] = leInt;
+		encodedHeaders.copy(payload, payloadOffset);
+		payloadOffset += encodedHeaders.length;
+		body.copy(payload, payloadOffset);
 		let encrypted = this.#encrypt(payload);
 		if ((leInt & 2) === 2) {
 			encrypted = Buffer.concat([
@@ -95,12 +98,12 @@ export class LegyEncryptedTransport {
 				// died while the host was suspended hung the call for the whole TCP
 				// retry window.
 				signal: request.signal,
-				body: new Uint8Array(encrypted),
+				body: asRequestBytes(encrypted),
 			}),
 		);
 		const responseBody = Buffer.from(await response.arrayBuffer());
 		if (!responseBody.length) {
-			return new Response(new Uint8Array(responseBody), {
+			return new Response(asRequestBytes(responseBody), {
 				status: response.status,
 				statusText: response.statusText,
 				headers: response.headers,
@@ -119,7 +122,7 @@ export class LegyEncryptedTransport {
 			headers.set(key, value);
 		}
 		headers.set("content-type", "application/x-thrift");
-		return new Response(new Uint8Array(decoded.data), {
+		return new Response(asRequestBytes(decoded.data), {
 			status: Number.isFinite(status) ? status : response.status,
 			headers,
 		});
@@ -181,16 +184,37 @@ export class LegyEncryptedTransport {
 }
 
 export function encodeLegyHeaders(headers: Record<string, string>): Buffer {
-	const parts: Buffer[] = [];
 	const entries = Object.entries(headers);
-	parts.push(u16be(entries.length));
-	for (const [key, value] of entries) {
-		const keyBuf = Buffer.from(key, "ascii");
-		const valueBuf = Buffer.from(value, "utf-8");
-		parts.push(u16be(keyBuf.length), keyBuf, u16be(valueBuf.length), valueBuf);
+	if (entries.length > 0xffff) {
+		throw new RangeError("LEGY header count exceeds the 16-bit wire limit");
 	}
-	const body = Buffer.concat(parts);
-	return Buffer.concat([u16be(body.length), body]);
+	const encodedEntries = entries.map(([key, value]) => ({
+		key: Buffer.from(key, "ascii"),
+		value: Buffer.from(value, "utf-8"),
+	}));
+	let bodyLength = 2;
+	for (const { key, value } of encodedEntries) {
+		bodyLength += 4 + key.length + value.length;
+	}
+	if (bodyLength > 0xffff) {
+		throw new RangeError("LEGY header block exceeds the 16-bit wire limit");
+	}
+
+	const encoded = Buffer.allocUnsafe(bodyLength + 2);
+	encoded.writeUInt16BE(bodyLength, 0);
+	encoded.writeUInt16BE(entries.length, 2);
+	let offset = 4;
+	for (const { key, value } of encodedEntries) {
+		encoded.writeUInt16BE(key.length, offset);
+		offset += 2;
+		key.copy(encoded, offset);
+		offset += key.length;
+		encoded.writeUInt16BE(value.length, offset);
+		offset += 2;
+		value.copy(encoded, offset);
+		offset += value.length;
+	}
+	return encoded;
 }
 
 export function decodeLegyHeaders(data: Buffer): {
@@ -318,8 +342,8 @@ function pkcs7Unpad(buf: Buffer): Buffer {
 	return size > 0 && size <= 16 ? buf.subarray(0, buf.length - size) : buf;
 }
 
-function u16be(value: number): Buffer {
-	const out = Buffer.alloc(2);
-	out.writeUInt16BE(value);
-	return out;
+function asRequestBytes(bytes: Buffer): Uint8Array<ArrayBuffer> {
+	return bytes.buffer instanceof ArrayBuffer
+		? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+		: new Uint8Array(bytes);
 }
