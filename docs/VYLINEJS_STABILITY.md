@@ -28,7 +28,8 @@ LINE VOOM ended on 2026-09-30. Its old `client.voom`, `client.voomRest`, and
 `client.base.timeline` APIs remain temporarily for source compatibility, are
 marked deprecated, and now fail immediately without issuing tokens or making
 network requests. Remove their use from applications; there is no replacement
-service announced. The compatibility exports are planned for removal in a
+  service announced. See [LINE's official shutdown notice](https://help2.line.me/line/smartphone?contentId=200000301&contentid=50000619&lang=ja).
+  The compatibility exports are planned for removal in a
 future major version. Generated protocol enums and fields remain where needed
 to decode historical LINE data.
 
