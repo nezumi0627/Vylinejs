@@ -15,7 +15,7 @@ export class AsyncWaitQueue<T> {
 
 	read(): CancellableRead<T> {
 		if (this.#closed) {
-			return { promise: Promise.resolve(null), cancel() {} };
+			return { promise: Promise.resolve(null), cancel: () => false };
 		}
 		let waiter!: Waiter<T>;
 		const promise = new Promise<T | null>((resolve) => {
@@ -26,9 +26,10 @@ export class AsyncWaitQueue<T> {
 			promise,
 			cancel: () => {
 				const index = this.#waiters.indexOf(waiter);
-				if (index < 0) return;
+				if (index < 0) return false;
 				this.#waiters.splice(index, 1);
 				waiter.resolve(null);
+				return true;
 			},
 		};
 	}

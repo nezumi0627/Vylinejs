@@ -1,23 +1,68 @@
 export interface CancellableRead<T> {
 	promise: Promise<T | null>;
-	cancel(): void;
+	cancel(): boolean;
+}
+
+export interface CancellableAsyncGenerator<T>
+	extends AsyncGenerator<T, void, unknown> {
+	cancelPending(): boolean;
+}
+
+export function cancellableRead<T>(
+	read: (isClosing: () => boolean) => Promise<T | null>,
+	cancelSource: () => boolean,
+): CancellableRead<T> {
+	let closing = false;
+	return {
+		promise: read(() => closing),
+		cancel() {
+			closing = true;
+			return cancelSource();
+		},
+	};
 }
 
 /** Builds an async generator whose pending pull can be cancelled by return(). */
 export function cancellableAsyncGenerator<T>(
 	read: () => CancellableRead<T>,
-): AsyncGenerator<T, void, unknown> {
+): CancellableAsyncGenerator<T> {
 	let finished = false;
+	let closing = false;
 	let pending: CancellableRead<T> | undefined;
+	let queuedNexts = 0;
 	let tail: Promise<void> = Promise.resolve();
 
-	const iterator: AsyncGenerator<T, void, unknown> = {
+	const cancelPending = (): boolean => {
+		closing = true;
+		if (pending) {
+			const cancelled = pending.cancel();
+			if (cancelled) {
+				pending = undefined;
+				finished = true;
+			}
+			return cancelled;
+		}
+		if (queuedNexts > 0) {
+			finished = true;
+			return true;
+		}
+		return false;
+	};
+
+	const iterator: CancellableAsyncGenerator<T> = {
 		[Symbol.asyncIterator]() {
 			return this;
 		},
+		cancelPending,
 		next() {
+			queuedNexts++;
 			const result = tail.then(async (): Promise<IteratorResult<T, void>> => {
+				queuedNexts--;
 				if (finished) return { value: undefined, done: true };
+				if (closing) {
+					finished = true;
+					return { value: undefined, done: true };
+				}
 				try {
 					const current = read();
 					pending = current;
@@ -27,6 +72,7 @@ export function cancellableAsyncGenerator<T>(
 						finished = true;
 						return { value: undefined, done: true };
 					}
+					if (closing) finished = true;
 					return { value, done: false };
 				} catch (error) {
 					finished = true;
@@ -39,17 +85,15 @@ export function cancellableAsyncGenerator<T>(
 			return result;
 		},
 		async return() {
-			finished = true;
-			pending?.cancel();
-			pending = undefined;
+			cancelPending();
 			await tail;
+			finished = true;
 			return { value: undefined, done: true };
 		},
 		async throw(error?: unknown) {
-			finished = true;
-			pending?.cancel();
-			pending = undefined;
+			cancelPending();
 			await tail;
+			finished = true;
 			throw error;
 		},
 		async [Symbol.asyncDispose]() {

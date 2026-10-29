@@ -1,6 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { AsyncWaitQueue } from "./async_wait_queue.ts";
-import { cancellableAsyncGenerator } from "./cancellable_async_generator.ts";
+import {
+	cancellableAsyncGenerator,
+	cancellableRead,
+} from "./cancellable_async_generator.ts";
 
 Deno.test("return cancels a pending async-generator read", async () => {
 	let cancelled = false;
@@ -10,6 +13,7 @@ Deno.test("return cancels a pending async-generator read", async () => {
 		cancel() {
 			cancelled = true;
 			resolveRead(null);
+			return true;
 		},
 	}));
 
@@ -19,6 +23,38 @@ Deno.test("return cancels a pending async-generator read", async () => {
 	assertEquals(cancelled, true);
 	assertEquals(await pendingNext, { value: undefined, done: true });
 	assertEquals(await iterator.next(), { value: undefined, done: true });
+});
+
+Deno.test("return preserves a value already delivered to an in-flight next", async () => {
+	const queue = new AsyncWaitQueue<number>();
+	const iterator = cancellableAsyncGenerator(() => queue.read());
+	const pendingNext = iterator.next();
+	await Promise.resolve();
+	assertEquals(queue.push(42), true);
+
+	const closing = iterator.return();
+	assertEquals(await pendingNext, { value: 42, done: false });
+	assertEquals(await closing, { value: undefined, done: true });
+	assertEquals(await iterator.next(), { value: undefined, done: true });
+});
+
+Deno.test("cancellation signals an in-flight read to stop retrying", async () => {
+	let finishWork!: () => void;
+	let stoppedAfterCurrent = false;
+	const read = cancellableRead(async (isClosing) => {
+		await new Promise<void>((resolve) => finishWork = resolve);
+		stoppedAfterCurrent = isClosing();
+		return null;
+	}, () => false);
+	const iterator = cancellableAsyncGenerator(() => read);
+	const next = iterator.next();
+	await Promise.resolve();
+	const closing = iterator.return();
+	finishWork();
+
+	assertEquals(await next, { value: undefined, done: true });
+	assertEquals(await closing, { value: undefined, done: true });
+	assertEquals(stoppedAfterCurrent, true);
 });
 
 Deno.test("concurrent next calls remain serialized in request order", async () => {

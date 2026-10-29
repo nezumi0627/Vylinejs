@@ -23,8 +23,10 @@ import type { CallAudioPacket } from "../audio.ts";
 import type { IncomingCallRoute, IncomingPlanetCall } from "../incoming.ts";
 import { AsyncWaitQueue } from "../async_wait_queue.ts";
 import {
+	type CancellableAsyncGenerator,
 	cancellableAsyncGenerator,
 	type CancellableRead,
+	cancellableRead,
 } from "../cancellable_async_generator.ts";
 import { makeChunkHdr, parseFrameHeader } from "./framing.ts";
 import { depacketizeEas2 } from "./eas2.ts";
@@ -1942,10 +1944,15 @@ export class PlanetTransport implements CallTransport {
 
 	#takeRtp(): CancellableRead<Uint8Array> {
 		if (this.#endReason) {
-			return { promise: Promise.resolve(null), cancel() {} };
+			return { promise: Promise.resolve(null), cancel: () => false };
 		}
 		const queued = this.#rtpQueue.shift();
-		if (queued) return { promise: Promise.resolve(queued), cancel() {} };
+		if (queued) {
+			return {
+				promise: Promise.resolve(queued),
+				cancel: () => false,
+			};
+		}
 		return this.#rtpWaiters.read();
 	}
 
@@ -3861,7 +3868,7 @@ export class PlanetTransport implements CallTransport {
 		let initialized = false;
 		let grouped = false;
 		let groupPackets:
-			| AsyncGenerator<CallAudioPacket, void, unknown>
+			| CancellableAsyncGenerator<CallAudioPacket>
 			| undefined;
 		let groupFrames: Uint8Array[] = [];
 		const buffered: Uint8Array[] = [];
@@ -3876,21 +3883,16 @@ export class PlanetTransport implements CallTransport {
 			}
 			if (grouped) {
 				const frame = groupFrames.shift();
-				if (frame) return { promise: Promise.resolve(frame), cancel() {} };
+				if (frame) {
+					return { promise: Promise.resolve(frame), cancel: () => false };
+				}
 				const packets = groupPackets!;
-				let cancelled = false;
-				const promise = packets.next().then((result) => {
-					if (cancelled || result.done) return null;
+				return cancellableRead(async () => {
+					const result = await packets.next();
+					if (result.done) return null;
 					groupFrames = result.value.frames.slice(1);
 					return result.value.frames[0] ?? null;
-				});
-				return {
-					promise,
-					cancel() {
-						cancelled = true;
-						void packets.return().catch(() => {});
-					},
-				};
+				}, () => packets.cancelPending());
 			}
 			return this.#readDecoded(async (wire) => {
 				const decrypted = await this.#decryptMediaRtp(wire);
@@ -3912,7 +3914,7 @@ export class PlanetTransport implements CallTransport {
 		});
 	}
 
-	receiveAudio(): AsyncGenerator<CallAudioPacket, void, unknown> {
+	receiveAudio(): CancellableAsyncGenerator<CallAudioPacket> {
 		return this.#receiveDecoded(
 			async (wire) => {
 				const decrypted = await this.#decryptMediaRtp(wire);
@@ -3958,7 +3960,7 @@ export class PlanetTransport implements CallTransport {
 	#receiveDecoded<T>(
 		decode: (wire: Uint8Array) => Promise<T[]>,
 		validate: () => void,
-	): AsyncGenerator<T, void, unknown> {
+	): CancellableAsyncGenerator<T> {
 		const buffered: T[] = [];
 		let initialized = false;
 		return cancellableAsyncGenerator(() => {
@@ -3976,17 +3978,16 @@ export class PlanetTransport implements CallTransport {
 	): CancellableRead<T> {
 		const available = buffered.shift();
 		if (available !== undefined) {
-			return { promise: Promise.resolve(available), cancel() {} };
+			return { promise: Promise.resolve(available), cancel: () => false };
 		}
 		let current = this.#takeRtp();
-		let cancelled = false;
-		const promise = (async () => {
-			while (!cancelled) {
+		return cancellableRead(async (isClosing) => {
+			while (true) {
 				const wire = await current.promise;
-				if (cancelled || !wire) return null;
+				if (!wire) return null;
 				try {
 					const decoded = await decode(wire);
-					if (cancelled || this.#endReason) return null;
+					if (this.#endReason) return null;
 					if (decoded.length > 0) {
 						for (let i = 1; i < decoded.length; i++) buffered.push(decoded[i]);
 						return decoded[0];
@@ -4000,23 +4001,16 @@ export class PlanetTransport implements CallTransport {
 						reason: error instanceof Error ? error.message : String(error),
 					});
 				}
-				if (!cancelled) current = this.#takeRtp();
+				if (isClosing()) return null;
+				current = this.#takeRtp();
 			}
-			return null;
-		})();
-		return {
-			promise,
-			cancel() {
-				cancelled = true;
-				current.cancel();
-			},
-		};
+		}, () => current.cancel());
 	}
 
 	#takeVideoFrame() {
 		const frame = this.#videoQueue.shift();
 		return frame
-			? { promise: Promise.resolve(frame), cancel() {} }
+			? { promise: Promise.resolve(frame), cancel: () => false }
 			: this.#videoWaiters.read();
 	}
 
@@ -4024,7 +4018,7 @@ export class PlanetTransport implements CallTransport {
 		return cancellableAsyncGenerator(() =>
 			this.videoAvailable
 				? this.#takeVideoFrame()
-				: { promise: Promise.resolve(null), cancel() {} }
+				: { promise: Promise.resolve(null), cancel: () => false }
 		);
 	}
 

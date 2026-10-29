@@ -41,6 +41,7 @@ import { AsyncWaitQueue } from "./async_wait_queue.ts";
 import {
 	cancellableAsyncGenerator,
 	type CancellableRead,
+	cancellableRead,
 } from "./cancellable_async_generator.ts";
 
 export interface AndromedaTransportOpts {
@@ -163,10 +164,15 @@ export class AndromedaTransport implements CallTransport {
 	}
 	#takeRtp(): CancellableRead<Uint8Array> {
 		if (this.#closed) {
-			return { promise: Promise.resolve(null), cancel() {} };
+			return { promise: Promise.resolve(null), cancel: () => false };
 		}
 		const packet = this.#rtpQueue.shift();
-		if (packet) return { promise: Promise.resolve(packet), cancel() {} };
+		if (packet) {
+			return {
+				promise: Promise.resolve(packet),
+				cancel: () => false,
+			};
+		}
 		return this.#rtpWaiters.read();
 	}
 
@@ -380,33 +386,26 @@ export class AndromedaTransport implements CallTransport {
 					"AndromedaTransport.receive: call not established (INVITE first)",
 				);
 			}
-			return this.#readAudioPacket(context);
+			return this.#readAudioPacket();
 		});
 	}
 
-	#readAudioPacket(context: SrtpCryptoContext): CancellableRead<Uint8Array> {
+	#readAudioPacket(): CancellableRead<Uint8Array> {
 		let current = this.#takeRtp();
-		let cancelled = false;
-		const promise = (async () => {
-			while (!cancelled) {
+		return cancellableRead(async (isClosing) => {
+			while (true) {
 				const wire = await current.promise;
-				if (cancelled || !wire) return null;
+				if (!wire) return null;
 				try {
+					const context = this.#srtpRecv;
+					if (!context) return null;
 					const rtp = await srtpDecrypt(context, wire);
-					if (!cancelled) return parseRtp(rtp).payload;
-					return null;
+					return parseRtp(rtp).payload;
 				} catch { /* drop bad packet */ }
-				if (!cancelled) current = this.#takeRtp();
+				if (isClosing()) return null;
+				current = this.#takeRtp();
 			}
-			return null;
-		})();
-		return {
-			promise,
-			cancel() {
-				cancelled = true;
-				current.cancel();
-			},
-		};
+		}, () => current.cancel());
 	}
 
 	/** REGISTER against cscf. Returns final SIP status (200 = registered). */
