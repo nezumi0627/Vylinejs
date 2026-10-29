@@ -88,6 +88,13 @@ internal AES-CM processing reduced a paired-run median from 53.5 ms to 44.0 ms
 (about 18%). Results vary by run; reproduce with
 `deno run -A scripts/bench-srtp.ts 1000`.
 
+The SRTP packet path now passes typed-array views directly to Node crypto,
+removing per-packet `Buffer.from()` copies for keys, payloads, and HMAC input,
+plus the intermediate `Buffer.concat()` and output copy. Against the previous
+implementation, two 1,000-packet paired-run medians improved from 37.1/38.9 ms
+to 33.3/32.6 ms (about 10–16%). These local microbenchmarks are sensitive to
+runtime load; reproduce with `deno run -A scripts/bench-srtp.ts 1000`.
+
 Compact text encoding (Deno 2.7.14 / Windows, 500 encodes per run, five runs)
 now measures UTF-8 length before choosing an encoding, then allocates only the
 selected representation. For 13,000 ASCII characters, the median fell from

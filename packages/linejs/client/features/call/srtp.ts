@@ -1,7 +1,6 @@
 // SRTP AES_CM_128_HMAC_SHA1_80 (RFC 3711).
 // Key derivation: AES-CM PRF per §4.3.
 
-import { Buffer } from "node:buffer";
 import { createCipheriv, createHmac } from "node:crypto";
 
 const HMAC_TAG_LEN = 10; // SHA1_80 = 80 bits = 10 bytes
@@ -52,8 +51,15 @@ function deriveKey(
 	// CM counter mode: encrypt successive 16-byte blocks of (iv || ctr=0,1,…)
 	const ctrIv = new Uint8Array(16);
 	ctrIv.set(iv);
-	const cipher = createCipheriv("aes-128-ctr", masterKey, Buffer.from(ctrIv));
-	const out = Buffer.concat([cipher.update(Buffer.alloc(len)), cipher.final()]);
+	const cipher = createCipheriv("aes-128-ctr", masterKey, ctrIv);
+	const encrypted = cipher.update(new Uint8Array(len));
+	const final = cipher.final();
+	let out: Uint8Array = encrypted;
+	if (final.length > 0) {
+		out = new Uint8Array(encrypted.length + final.length);
+		out.set(encrypted);
+		out.set(final, encrypted.length);
+	}
 	return new Uint8Array(out.subarray(0, len));
 }
 
@@ -85,11 +91,11 @@ export async function srtpEncrypt(
 	out.set(enc, headerLen);
 
 	// auth = HMAC-SHA1(authKey, packet || ROC) [0..10]
-	const h = createHmac("sha1", Buffer.from(ctx.authKey));
-	h.update(Buffer.from(out.subarray(0, rtpPacket.length)));
+	const h = createHmac("sha1", ctx.authKey);
+	h.update(out.subarray(0, rtpPacket.length));
 	const rocBuf = new Uint8Array(4);
 	writeU32(rocBuf, 0, roc);
-	h.update(Buffer.from(rocBuf));
+	h.update(rocBuf);
 	const tag = new Uint8Array(h.digest()).subarray(0, HMAC_TAG_LEN);
 	out.set(tag, rtpPacket.length);
 
@@ -116,11 +122,11 @@ export async function srtpDecrypt(
 	const seq = readU16(srtpPacket, 2);
 	const roc = ctx.rocs.get(ssrc) ?? 0;
 
-	const h = createHmac("sha1", Buffer.from(ctx.authKey));
-	h.update(Buffer.from(inner));
+	const h = createHmac("sha1", ctx.authKey);
+	h.update(inner);
 	const rocBuf = new Uint8Array(4);
 	writeU32(rocBuf, 0, roc);
-	h.update(Buffer.from(rocBuf));
+	h.update(rocBuf);
 	const expected = new Uint8Array(h.digest()).subarray(0, HMAC_TAG_LEN);
 	if (!constantTimeEqual(tag, expected)) {
 		throw new Error("SRTP auth tag mismatch");
@@ -166,16 +172,14 @@ function aesCmEncrypt(
 	iv[12] ^= (seq >>> 8) & 0xff;
 	iv[13] ^= seq & 0xff;
 	// Final two bytes (14..15) start as counter 0 — Node aes-128-ctr increments them
-	const cipher = createCipheriv(
-		"aes-128-ctr",
-		Buffer.from(key),
-		Buffer.from(iv),
-	);
-	const out = Buffer.concat([
-		cipher.update(Buffer.from(payload)),
-		cipher.final(),
-	]);
-	return new Uint8Array(out.subarray(0, payload.length));
+	const cipher = createCipheriv("aes-128-ctr", key, iv);
+	const encrypted = cipher.update(payload);
+	const final = cipher.final();
+	if (final.length === 0) return encrypted;
+	const out = new Uint8Array(encrypted.length + final.length);
+	out.set(encrypted);
+	out.set(final, encrypted.length);
+	return out.subarray(0, payload.length);
 }
 
 function readU16(b: Uint8Array, o: number): number {
