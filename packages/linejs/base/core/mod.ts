@@ -123,6 +123,7 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 	readonly storage: BaseStorage;
 	readonly e2ee: E2EE;
 	readonly obs: LineObs;
+	/** @deprecated LINE VOOM ended on 2026-09-30; calls fail immediately. */
 	readonly timeline: Timeline;
 	readonly poll: Polling;
 	readonly push: ConnManager;

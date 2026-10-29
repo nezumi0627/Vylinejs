@@ -19,6 +19,7 @@ import {
 } from "./features/profile.ts";
 import { createLiffClient, type LiffClient } from "./features/liff.ts";
 export * as liff from "./features/liff.ts";
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export * as voom from "./features/voom.ts";
 import {
 	createVoomClient,
@@ -102,11 +103,13 @@ export class Client extends TypedEventEmitter<ClientEvents> {
 		return this.#liff;
 	}
 
+	/** @deprecated LINE VOOM ended on 2026-09-30; this rejects without a request. */
 	voomRest<T = unknown>(opts: VoomRestOptions): Promise<VoomRestResponse<T>> {
 		return voomRest(this, opts);
 	}
 
 	#voom?: VoomClient;
+	/** @deprecated LINE VOOM ended on 2026-09-30; calls fail immediately. */
 	get voom(): VoomClient {
 		if (!this.#voom) this.#voom = createVoomClient(this);
 		return this.#voom;
