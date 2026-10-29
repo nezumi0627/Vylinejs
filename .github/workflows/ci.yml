@@ -1,50 +1,81 @@
-name: ci
+name: CI
+
 on:
   pull_request:
-    branches: ["*"]
-    paths-ignore:
-      - "docs/**"
-      - ".vscode/**"
-      - "README.md"
-      - ".gitignore"
-      - "LICENSE"
   push:
+    branches: ["**"]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  jsr-dry-run:
-    name: "Checking if it's valid for JSR"
+  tests:
+    name: Tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - run: deno publish --dry-run
+      - name: Check out source
+        uses: actions/checkout@v6
 
-  deno:
-    name: "Testing"
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      - uses: denoland/setup-deno@v2
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      # `-A` because transitive deps (e.g. the `q` promise lib reachable
-      # through Buffer) read env vars at module init.  Without env access
-      # the test runner fails before any test body runs.
-      - run: deno test -A
-      - uses: actions/setup-node@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           package-manager-cache: false
-      - run: node scripts/test_node_transport.mts
 
-#  format:
-#    name: "Format Check"
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: denoland/setup-deno@v1
-#        with:
-#          deno-version: v2.x
-#      - run: deno fmt --check
+      - name: Run Deno tests
+        run: deno test -A
+
+      - name: Check Node transport
+        run: node scripts/test_node_transport.mts
+
+  package:
+    name: JSR package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Validate package
+        run: deno publish --dry-run
+
+  documentation:
+    name: Documentation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: docs
+
+      - name: Check translations
+        run: npm run check:i18n
+        working-directory: docs
+
+      - name: Build documentation
+        run: npm run build
+        working-directory: docs
