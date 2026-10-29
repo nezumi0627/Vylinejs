@@ -63,6 +63,15 @@ through `setMany()`, it took 3.11 ms and 5.38–7.71 ms, respectively. A
 
 ## Performance experiments
 
+Talk Push TMoreCompact payload wrapping (Deno 2.7.14 / Windows, 10,000
+conversions per run, five runs) now shares the incoming ArrayBuffer instead of
+copying each response. In a conversion-only microbenchmark, median time changed
+from 5.55 to 1.27 ms for 256-byte payloads, 17.49 to 0.94 ms for 4 KiB, and
+89.60 to 0.69 ms for 16 KiB. The benchmark excludes protocol parsing and
+network work; reproduce with `deno run -A scripts/bench-push-buffer-view.ts`.
+Non-UTF-8 decoded fields still copy their own bytes so they do not pin the
+entire incoming frame chunk in memory.
+
 Thrift serializer (Deno 2.7.14 / Windows, 10,000 compact-protocol messages,
 1,000 warm-up calls, five measured runs): direct chunk-to-output copying removes
 the intermediate concatenated body and second full-body copy. One measured
