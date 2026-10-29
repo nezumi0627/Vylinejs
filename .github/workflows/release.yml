@@ -8,10 +8,10 @@ on:
 jobs:
   verify:
     name: Verify release source
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v1
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
       - run: deno test -A

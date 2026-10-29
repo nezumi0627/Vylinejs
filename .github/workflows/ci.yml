@@ -13,10 +13,10 @@ on:
 jobs:
   jsr-dry-run:
     name: "Checking if it's valid for JSR"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v1
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
       - run: deno publish --dry-run
@@ -26,19 +26,20 @@ jobs:
 
   deno:
     name: "Testing"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v1
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
       # `-A` because transitive deps (e.g. the `q` promise lib reachable
       # through Buffer) read env vars at module init.  Without env access
       # the test runner fails before any test body runs.
       - run: deno test -A
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
       - run: node scripts/test_node_transport.mts
 
 #  format:
