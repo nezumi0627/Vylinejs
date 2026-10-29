@@ -1,9 +1,13 @@
-// VOOM / MyHome / Note / Album REST helpers. Routing prefix table +
-// X-Line-ChannelToken auth — all from smali (m98/v$a, ps5/j) and
-// live-verified against gw.line.naver.jp.
 import type { Client } from "../mod.ts";
 
-/** Channel ids from smali t98.a$b. */
+const DISCONTINUED_MESSAGE =
+	"LINE VOOM ended on 2026-09-30 and is no longer available. The Vylinejs VOOM APIs are deprecated and will be removed in a future major version.";
+
+function discontinuedError(): Error {
+	return new Error(DISCONTINUED_MESSAGE);
+}
+
+/** @deprecated LINE VOOM ended on 2026-09-30. Retained temporarily for source compatibility. */
 export const VoomChannelId = {
 	TIMELINE: "1341209950",
 	HOME: "1341209850",
@@ -13,12 +17,7 @@ export const VoomChannelId = {
 	ALBUM: "1375220249",
 } as const;
 
-/**
- * Routing prefix per MH-family service, from smali ps5/j enum.
- * All 11 prefixes live-verified against gw.line.naver.jp — gateway
- * routes the request and returns a structured response (LINE code or
- * Spring error from the right upstream).
- */
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export const VoomRoutingPrefix = {
 	MYHOME: "/mh",
 	MYHOME_RENEWAL: "/hm",
@@ -33,79 +32,51 @@ export const VoomRoutingPrefix = {
 	TRANSLATION: "/ds",
 } as const;
 
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export type VoomRouting = keyof typeof VoomRoutingPrefix;
 
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export interface VoomRestOptions {
-	/** Path under the routing prefix, e.g. "/api/v57/post/list.json". */
 	path: string;
-	/** Which routing prefix to apply. Defaults to MYHOME. */
 	routing?: VoomRouting;
 	method?: "GET" | "POST" | "PUT" | "DELETE";
 	body?: unknown;
 	channelToken?: string;
 	extraHeaders?: Record<string, string>;
-	/** Full host override (default gw.line.naver.jp). */
 	host?: string;
 }
 
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export interface VoomRestResponse<T = unknown> {
 	code: number;
 	message?: string;
 	result: T | null;
 }
 
-export async function voomRest<T = unknown>(
-	client: Client,
-	opts: VoomRestOptions,
+/**
+ * @deprecated LINE VOOM ended on 2026-09-30. This compatibility function now
+ * fails immediately and does not make a network request.
+ */
+export function voomRest<T = unknown>(
+	_client: Client,
+	_opts: VoomRestOptions,
 ): Promise<VoomRestResponse<T>> {
-	const host = opts.host ?? "gw.line.naver.jp";
-	const prefix = VoomRoutingPrefix[opts.routing ?? "MYHOME"];
-	const method = opts.method ?? (opts.body !== undefined ? "POST" : "GET");
-	const path = opts.path.startsWith("/") ? opts.path : "/" + opts.path;
-	const url = `https://${host}${prefix}${path}`;
-	const headers: Record<string, string> = {
-		accept: "application/json",
-		"X-Line-Application": client.base.request.systemType,
-		"user-agent": client.base.request.userAgent,
-		"X-Line-Mid": client.base.profile?.mid ?? "",
-		"x-lal": "ja-JP",
-		"X-Line-BDBTemplateVersion": "v1",
-		// Channel-scoped → X-Line-ChannelToken (smali m98/v$a). Primary
-		// session → X-Line-Access. NOT Authorization: Bearer.
-		...(opts.channelToken
-			? { "X-Line-ChannelToken": opts.channelToken }
-			: { "X-Line-Access": client.authToken }),
-		...(opts.extraHeaders ?? {}),
-	};
-	if (opts.body !== undefined) headers["content-type"] = "application/json";
-	const res = await client.base.fetch(url, {
-		method,
-		headers,
-		body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-	});
-	const text = await res.text();
-	if (!text) {
-		return { code: res.status, message: res.statusText, result: null };
-	}
-	return JSON.parse(text) as VoomRestResponse<T>;
-}
-
-export async function getChannelToken(
-	client: Client,
-	channelId: string,
-): Promise<string> {
-	const r = await client.base.channel.issueChannelToken({ channelId });
-	const t = (r as unknown as { token?: string }).token;
-	if (!t) throw new Error("issueChannelToken returned no token");
-	return t;
+	return Promise.reject(discontinuedError());
 }
 
 /**
- * Curated MH-family REST paths from LINE Android 26.6.2 smali.
- * Each path is paired with its routing prefix in {@link VoomEndpointRouting}.
+ * @deprecated LINE VOOM ended on 2026-09-30. This compatibility function now
+ * fails immediately and does not issue a channel token.
  */
+export function getChannelToken(
+	_client: Client,
+	_channelId: string,
+): Promise<string> {
+	return Promise.reject(discontinuedError());
+}
+
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export const VoomEndpoints = {
-	// VOOM feed / posts → MYHOME prefix
 	feed: "/api/v57/post/list.json",
 	createPost: "/api/v57/post/create.json",
 	updatePost: "/api/v57/post/update.json",
@@ -128,87 +99,53 @@ export const VoomEndpoints = {
 	hashtagSearch: "/api/v57/hashtag/search.json",
 	hashtagSuggestPopular: "/api/v57/hashtag/suggest/popular.json",
 	groupHomeInit: "/api/v57/grouphome/init.json",
-	// TIMELINE prefix
 	timelineStatus: "/api/v57/timeline/tab/status.json",
 	timelineContents: "/api/v57/timeline/tab/contents.json",
-	// HOMEAPI prefix
 	homeProfile: "/api/v1/home/profile.json",
 	homeCover: "/api/v1/home/cover.json",
 } as const;
 
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export interface VoomClient {
 	getToken(channel: keyof typeof VoomChannelId): Promise<string>;
-	/** Low-level call. Auto-mints channel token + applies routing prefix. */
 	call<T = unknown>(
 		channel: keyof typeof VoomChannelId,
 		opts: Omit<VoomRestOptions, "channelToken">,
 	): Promise<VoomRestResponse<T>>;
-	/** GET /mh/api/v57/post/list.json — VOOM feed. Live-verified (#151). */
-	feed(
-		opts?: { postLimit?: number; followingMaxPage?: number },
-	): Promise<VoomRestResponse>;
-	/** GET /tl/api/v57/timeline/tab/status.json. Live-verified. */
+	feed(opts?: {
+		postLimit?: number;
+		followingMaxPage?: number;
+	}): Promise<VoomRestResponse>;
 	timelineStatus(): Promise<VoomRestResponse>;
 }
 
 class ClientVoom implements VoomClient {
-	#client: Client;
-	#tokenCache = new Map<string, string>();
-	#tokenRequests = new Map<string, Promise<string>>();
-	#cacheMid?: string;
-	constructor(client: Client) {
-		this.#client = client;
-	}
-	async getToken(channel: keyof typeof VoomChannelId): Promise<string> {
-		const mid = this.#client.base.profile?.mid;
-		if (this.#cacheMid !== mid) {
-			this.#tokenCache.clear();
-			this.#cacheMid = mid;
-		}
-		const cached = this.#tokenCache.get(channel);
-		if (cached) return cached;
-		const requestKey = JSON.stringify([mid, channel]);
-		const existing = this.#tokenRequests.get(requestKey);
-		if (existing) return await existing;
+	constructor(_client: Client) {}
 
-		const request = getChannelToken(this.#client, VoomChannelId[channel]);
-		this.#tokenRequests.set(requestKey, request);
-		try {
-			const token = await request;
-			if (this.#client.base.profile?.mid === mid) {
-				this.#tokenCache.set(channel, token);
-			}
-			return token;
-		} finally {
-			if (this.#tokenRequests.get(requestKey) === request) {
-				this.#tokenRequests.delete(requestKey);
-			}
-		}
+	getToken(_channel: keyof typeof VoomChannelId): Promise<string> {
+		return Promise.reject(discontinuedError());
 	}
-	async call<T = unknown>(
-		channel: keyof typeof VoomChannelId,
-		opts: Omit<VoomRestOptions, "channelToken">,
+
+	call<T = unknown>(
+		_channel: keyof typeof VoomChannelId,
+		_opts: Omit<VoomRestOptions, "channelToken">,
 	): Promise<VoomRestResponse<T>> {
-		const channelToken = await this.getToken(channel);
-		return await voomRest<T>(this.#client, { ...opts, channelToken });
+		return Promise.reject(discontinuedError());
 	}
-	async feed(opts: { postLimit?: number; followingMaxPage?: number } = {}) {
-		const postLimit = opts.postLimit ?? 10;
-		const followingMaxPage = opts.followingMaxPage ?? 2;
-		return await this.call("TIMELINE", {
-			routing: "MYHOME",
-			path:
-				`${VoomEndpoints.feed}?postLimit=${postLimit}&followingMaxPage=${followingMaxPage}`,
-		});
+
+	feed(_opts?: {
+		postLimit?: number;
+		followingMaxPage?: number;
+	}): Promise<VoomRestResponse> {
+		return Promise.reject(discontinuedError());
 	}
-	async timelineStatus() {
-		return await this.call("TIMELINE", {
-			routing: "TIMELINE",
-			path: VoomEndpoints.timelineStatus,
-		});
+
+	timelineStatus(): Promise<VoomRestResponse> {
+		return Promise.reject(discontinuedError());
 	}
 }
 
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export function createVoomClient(client: Client): VoomClient {
 	return new ClientVoom(client);
 }
