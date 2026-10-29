@@ -4,6 +4,7 @@ import type { BaseClient } from "../mod.ts";
 import { TCompactProtocol } from "thrift";
 
 import { TMoreCompactProtocol } from "../thrift/readwrite/tmc.ts";
+import { toBufferView } from "./buffer_view.ts";
 
 // GOMI:
 import {
@@ -22,7 +23,6 @@ import type {
 } from "@evex/linejs-types";
 
 import type { ParsedThrift } from "../thrift/mod.ts";
-import { Buffer } from "node:buffer";
 import type { LooseType } from "@evex/loose-types";
 
 function gen_m(ss = [1, 3, 5, 6, 8, 9, 10]) {
@@ -352,7 +352,7 @@ export class ConnManager {
 				let parsed: ParsedThrift | null = null;
 				let detectedMethod = methodName;
 				try {
-					const proto = new TMoreCompactProtocol(Buffer.from(data));
+					const proto = new TMoreCompactProtocol(toBufferView(data));
 					parsed = <LooseType> {
 						data: proto.res,
 						_info: {
