@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { Buffer } from "node:buffer";
 import type { Message } from "vylinejs-types";
 import type { Client } from "../../client.ts";
 import { TalkMessage } from "./talk.ts";
@@ -71,11 +72,16 @@ Deno.test("TalkMessage.updatedTime", () => {
 
 function makeClient() {
 	const chatCheckedCalls: unknown[] = [];
+	const sendCalls: unknown[] = [];
 	const client = {
 		base: {
 			profile: { mid: "u-self" },
 			getReqseq: () => Promise.resolve(1),
 			talk: {
+				sendMessage(opts: unknown) {
+					sendCalls.push(opts);
+					return Promise.resolve({});
+				},
 				sendChatChecked(opts: unknown) {
 					chatCheckedCalls.push(opts);
 					return Promise.resolve({});
@@ -83,7 +89,7 @@ function makeClient() {
 			},
 		},
 	} as never as Client;
-	return { client, chatCheckedCalls };
+	return { client, chatCheckedCalls, sendCalls };
 }
 
 function makeRaw(
@@ -126,4 +132,73 @@ Deno.test("read keeps 1:1 behavior (counterpart mid) for received DMs", async ()
 		lastMessageId: "msg-1",
 		seq: 1,
 	});
+});
+
+Deno.test("send(string) preserves the existing reply call shape", async () => {
+	const { client, sendCalls } = makeClient();
+	const msg = new TalkMessage({
+		client,
+		raw: makeRaw({ to: "g-group", from: "u-them", toType: "GROUP" }),
+	});
+
+	await msg.send("hello from LINEJS-style usage");
+
+	assertEquals(sendCalls, [{
+		relatedMessageId: "msg-1",
+		text: "hello from LINEJS-style usage",
+		to: "g-group",
+		e2ee: false,
+		contentMetadata: undefined,
+	}]);
+});
+
+Deno.test("send(object) forwards the LINEJS message fields to the same chat", async () => {
+	const { client, sendCalls } = makeClient();
+	const msg = new TalkMessage({
+		client,
+		raw: makeRaw({ to: "g-group", from: "u-them", toType: "GROUP" }),
+	});
+	const location = { title: "Here", address: "Somewhere" } as never;
+
+	await msg.send({
+		text: "hello",
+		contentType: "NONE",
+		contentMetadata: { sample: "value" },
+		relatedMessageId: "reply-to",
+		location,
+	});
+
+	assertEquals(sendCalls, [{
+		to: "g-group",
+		e2ee: false,
+		text: "hello",
+		contentType: "NONE",
+		contentMetadata: { sample: "value" },
+		relatedMessageId: "reply-to",
+		location,
+	}]);
+});
+
+Deno.test("send(object) accepts caller-prepared E2EE chunks", async () => {
+	const { client, sendCalls } = makeClient();
+	const msg = new TalkMessage({
+		client,
+		raw: makeRaw({ to: "g-group", from: "u-them", toType: "GROUP" }),
+	});
+	const chunks = [Buffer.from([1, 2, 3])];
+
+	await msg.send({
+		contentType: "IMAGE",
+		contentMetadata: { e2eeVersion: "2" },
+		chunks,
+		e2ee: true,
+	});
+
+	assertEquals(sendCalls, [{
+		to: "g-group",
+		e2ee: true,
+		contentType: "IMAGE",
+		contentMetadata: { e2eeVersion: "2" },
+		chunks,
+	}]);
 });

@@ -19,6 +19,17 @@ import {
 
 export type { CompactMessageResponse, SendCompactMessageOptions };
 
+export interface SendMessageOptions {
+	to: string;
+	text?: string;
+	contentType?: LINETypes.ContentType;
+	contentMetadata?: Record<string, string>;
+	relatedMessageId?: string;
+	location?: LINETypes.Location;
+	chunks?: string[] | Buffer[];
+	e2ee?: boolean;
+}
+
 export class TalkService implements BaseService {
 	client: BaseClient;
 	protocolType: ProtocolKey = 4;
@@ -89,16 +100,7 @@ export class TalkService implements BaseService {
 	 * @returns A promise that resolves to the sent message.
 	 * @throws Will throw an error if the message sending fails.
 	 */
-	async sendMessage(options: {
-		to: string;
-		text?: string;
-		contentType?: LINETypes.ContentType;
-		contentMetadata?: Record<string, string>;
-		relatedMessageId?: string;
-		location?: LINETypes.Location;
-		chunks?: string[] | Buffer[];
-		e2ee?: boolean;
-	}): Promise<LINETypes.Message> {
+	async sendMessage(options: SendMessageOptions): Promise<LINETypes.Message> {
 		const {
 			to,
 			text,

@@ -9,12 +9,24 @@ Vylinejs は、パスワード、QR コード、既存の認証トークンに�
 `pincode` を省略すると、Vylinejs が E2EE ログインのハンドシェイク用にランダムな6桁の PIN を生成します。
 次の例は Deno の環境変数にアクセスするため、必要な環境変数へのアクセス権限だけを付与してください。
 
+ログイン方式は、選択したデバイスが対応するプロトコルから自動選択されます。
+ログインオプションに `v3: false` を指定すると旧方式を選べます。
+`e2ee` は旧パスワードログインでの E2EE ハンドシェイクを制御します。
+
+ログイン時の端末識別情報は Vyline 方式が既定です。
+セキュア QR ログインでは実行ホスト名と汎用モデル名を送信します。
+QR ログインで `loginMode: "linejs"` を指定すると、LINEJS の従来値（`linejs-v2` / `evex-device`）を使用します。
+`v3` は認証プロトコルを、`loginMode` はセキュア QR の端末識別情報を選ぶ別々の設定です。
+QR ログインでは `systemName` と `modelName`、パスワードログインでは`modelName`を個別に指定できます。
+
 ```ts
 import { loginWithPassword } from "@nezumi0627/vylinejs";
 
 const client = await loginWithPassword({
 	email: Deno.env.get("LINE_EMAIL")!,
 	password: Deno.env.get("LINE_PASSWORD")!,
+	v3: false,
+	modelName: "System Product Name",
 	onPincodeRequest(pin) {
 		console.log("Enter this PIN in LINE:", pin);
 	},
@@ -32,10 +44,16 @@ QR ログインでは、ライブラリにパスワードを渡す必要があ�
 Vylinejs は `onReceiveQRUrl` を通じて URL を返します。
 その URL を QR コードとして表示する処理は、ホストアプリケーションが実装します。
 
+`v3: false` を指定すると旧 QR ログイン方式を選択できます。
+省略時はデバイスに応じて自動選択します。
+
 ```ts
 import { loginWithQR } from "@nezumi0627/vylinejs";
 
 const client = await loginWithQR({
+	loginMode: "vyline",
+	systemName: "MY-DESKTOP",
+	modelName: "System Product Name",
 	onReceiveQRUrl(url) {
 		showQrCode(url);
 	},

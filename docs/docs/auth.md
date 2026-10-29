@@ -6,12 +6,18 @@ Vylinejs supports password login, QR login, login with an existing auth token, a
 
 Use password login only when an interactive login is needed. If `pincode` is omitted, Vylinejs generates a random six-digit PIN for the E2EE login handshake. The example uses Deno environment access; grant only the required environment permission.
 
+The login protocol version defaults to the one supported by the selected device. Set `v3: false` on the login options to explicitly use the legacy flow; `e2ee` controls the legacy password flow's E2EE handshake.
+
+Login identity defaults to Vyline: secure QR login sends the current host name and a generic model name. Set `loginMode: "linejs"` to preserve the historical LINEJS QR identity (`linejs-v2` / `evex-device`). `v3` selects the authentication protocol; `loginMode` selects the secure QR identity and does not change that protocol. You can set `systemName` and `modelName` explicitly for QR login, or `modelName` for password login.
+
 ```ts
 import { loginWithPassword } from "@nezumi0627/vylinejs";
 
 const client = await loginWithPassword({
 	email: Deno.env.get("LINE_EMAIL")!,
 	password: Deno.env.get("LINE_PASSWORD")!,
+	v3: false,
+	modelName: "System Product Name",
 	onPincodeRequest(pin) {
 		console.log("Enter this PIN in LINE:", pin);
 	},
@@ -26,10 +32,15 @@ Provide credentials from a private secret store or environment configuration. Do
 
 QR login avoids passing a password to the library. Vylinejs returns a URL through `onReceiveQRUrl`; the host application is responsible for rendering that URL as a QR code.
 
+Set `v3: false` to select the legacy QR protocol. When omitted, Vylinejs chooses based on the device.
+
 ```ts
 import { loginWithQR } from "@nezumi0627/vylinejs";
 
 const client = await loginWithQR({
+	loginMode: "vyline",
+	systemName: "MY-DESKTOP",
+	modelName: "System Product Name",
 	onReceiveQRUrl(url) {
 		showQrCode(url);
 	},
