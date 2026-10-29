@@ -24,9 +24,14 @@ eviction is performed.
 LIFF send-token caching is scoped to account MID, LIFF ID, and recipient, with
 a 128-entry LRU bound to cap memory on long-running clients.
 
-VOOM channel tokens are scoped to the active account. Concurrent requests for
-the same account and channel share one token issuance; changing accounts clears
-the previous account's cache.
+LINE VOOM ended on 2026-09-30. Its old `client.voom`, `client.voomRest`, and
+`client.base.timeline` APIs remain temporarily for source compatibility, are
+marked deprecated, and now fail immediately without issuing tokens or making
+network requests. Remove their use from applications; there is no replacement
+service announced. See [LINE's official shutdown notice](https://help2.line.me/line/smartphone?contentId=200000301&contentid=50000619&lang=ja).
+The compatibility exports are planned for removal in a future major version.
+Generated protocol enums and fields remain where needed to decode historical
+LINE data.
 
 ## FileStorage measurement
 
@@ -95,6 +100,13 @@ wrapping the encrypted bytes as a view brought two run medians from
 116.1/111.9 ms to 97.3/97.1 ms (about 13–16%). The
 benchmark measures the request encryption path without network latency or
 response decryption. Reproduce with `deno run -A scripts/bench-legy.ts 1000`.
+
+The SRTP packet path now passes typed-array views directly to Node crypto,
+removing per-packet `Buffer.from()` copies for keys, payloads, and HMAC input,
+plus the intermediate `Buffer.concat()` and output copy. Against the previous
+implementation, two 1,000-packet paired-run medians improved from 37.1/38.9 ms
+to 33.3/32.6 ms (about 10–16%). These local microbenchmarks are sensitive to
+runtime load; reproduce with `deno run -A scripts/bench-srtp.ts 1000`.
 
 Compact text encoding (Deno 2.7.14 / Windows, 500 encodes per run, five runs)
 now measures UTF-8 length before choosing an encoding, then allocates only the
