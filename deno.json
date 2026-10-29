@@ -14,7 +14,7 @@
 		"@std/assert": "jsr:@std/assert@^1.0.19",
 		"curve25519-js": "npm:curve25519-js@^0.0.4",
 		"node-bignumber": "npm:node-bignumber@^1.2.2",
-		"thrift": "npm:thrift@^0.20.0",
+		"thrift": "npm:thrift@^0.25.0",
 		"thrift-types": "npm:@types/thrift@^0.10.17",
 		"tweetnacl": "npm:tweetnacl@^1.0.3",
 		"jsdom": "npm:jsdom@25.0.0",

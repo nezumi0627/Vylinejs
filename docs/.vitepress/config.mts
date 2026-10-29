@@ -1,5 +1,4 @@
 import { defineConfig } from "vitepress";
-import { withMermaid } from "vitepress-plugin-mermaid";
 import process from "node:process";
 
 const base = process.env.GITHUB_ACTIONS ? "/Vylinejs/" : "/";
@@ -138,8 +137,20 @@ function localizeItems<T extends { text?: string; link?: string; items?: T[] }>(
   ...(item.items ? { items: localizeItems(item.items) } : {}),
  }));
 }
-export default withMermaid(defineConfig({
+export default defineConfig({
  ...config,
+ markdown: {
+  config(md) {
+   const fence = md.renderer.rules.fence!;
+   md.renderer.rules.fence = (tokens, index, options, env, self) => {
+    const token = tokens[index];
+    if (token.info.trim() === "mermaid") {
+     return `<MermaidDiagram code="${encodeURIComponent(token.content)}" />\n`;
+    }
+    return fence(tokens, index, options, env, self);
+   };
+  },
+ },
  locales: {
   root: { label:"English", lang:"en-US", link:"/" },
   ja: {
@@ -153,4 +164,4 @@ export default withMermaid(defineConfig({
    },
   },
  },
-}));
+});
