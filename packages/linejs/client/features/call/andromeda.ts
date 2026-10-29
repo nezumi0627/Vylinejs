@@ -37,6 +37,11 @@ import {
 	srtpEncrypt,
 } from "./srtp.ts";
 import { BoundedQueue } from "./planet/bounded_queue.ts";
+import { AsyncWaitQueue } from "./async_wait_queue.ts";
+import {
+	cancellableAsyncGenerator,
+	type CancellableRead,
+} from "./cancellable_async_generator.ts";
 
 export interface AndromedaTransportOpts {
 	localMid: string;
@@ -114,7 +119,7 @@ export class AndromedaTransport implements CallTransport {
 		1024 * 1024,
 		(packet) => packet.length,
 	);
-	#rtpWaiters: ((b: Uint8Array | null) => void)[] = [];
+	#rtpWaiters = new AsyncWaitQueue<Uint8Array>();
 	#closed = false;
 
 	constructor(opts: AndromedaTransportOpts) {
@@ -154,22 +159,22 @@ export class AndromedaTransport implements CallTransport {
 
 	#enqueueRtp(p: Uint8Array) {
 		if (this.#closed) return;
-		const w = this.#rtpWaiters.shift();
-		if (w) w(p);
-		else this.#rtpQueue.push(p, "drop-oldest");
+		if (!this.#rtpWaiters.push(p)) this.#rtpQueue.push(p, "drop-oldest");
 	}
-	#takeRtp(): Promise<Uint8Array | null> {
-		if (this.#closed) return Promise.resolve(null);
+	#takeRtp(): CancellableRead<Uint8Array> {
+		if (this.#closed) {
+			return { promise: Promise.resolve(null), cancel() {} };
+		}
 		const packet = this.#rtpQueue.shift();
-		if (packet) return Promise.resolve(packet);
-		return new Promise((res) => this.#rtpWaiters.push(res));
+		if (packet) return { promise: Promise.resolve(packet), cancel() {} };
+		return this.#rtpWaiters.read();
 	}
 
 	async close(): Promise<void> {
 		if (this.#closed) return;
 		this.#closed = true;
 		this.#rtpQueue.clear();
-		for (const waiter of this.#rtpWaiters.splice(0)) waiter(null);
+		this.#rtpWaiters.close();
 		for (const waiter of this.#pending.splice(0)) {
 			waiter.reject(new Error("SIP transport closed"));
 		}
@@ -367,20 +372,41 @@ export class AndromedaTransport implements CallTransport {
 		});
 	}
 
-	async *receive(): AsyncIterable<Uint8Array> {
-		if (!this.#srtpRecv) {
-			throw new Error(
-				"AndromedaTransport.receive: call not established (INVITE first)",
-			);
-		}
-		while (true) {
-			const wire = await this.#takeRtp();
-			if (!wire) return;
-			try {
-				const rtp = await srtpDecrypt(this.#srtpRecv, wire);
-				yield parseRtp(rtp).payload;
-			} catch { /* drop bad packet */ }
-		}
+	receive(): AsyncGenerator<Uint8Array, void, unknown> {
+		return cancellableAsyncGenerator(() => {
+			const context = this.#srtpRecv;
+			if (!context) {
+				throw new Error(
+					"AndromedaTransport.receive: call not established (INVITE first)",
+				);
+			}
+			return this.#readAudioPacket(context);
+		});
+	}
+
+	#readAudioPacket(context: SrtpCryptoContext): CancellableRead<Uint8Array> {
+		let current = this.#takeRtp();
+		let cancelled = false;
+		const promise = (async () => {
+			while (!cancelled) {
+				const wire = await current.promise;
+				if (cancelled || !wire) return null;
+				try {
+					const rtp = await srtpDecrypt(context, wire);
+					if (!cancelled) return parseRtp(rtp).payload;
+					return null;
+				} catch { /* drop bad packet */ }
+				if (!cancelled) current = this.#takeRtp();
+			}
+			return null;
+		})();
+		return {
+			promise,
+			cancel() {
+				cancelled = true;
+				current.cancel();
+			},
+		};
 	}
 
 	/** REGISTER against cscf. Returns final SIP status (200 = registered). */

@@ -21,6 +21,11 @@ import type * as LINETypes from "@evex/linejs-types";
 import type { CallTransport } from "../session.ts";
 import type { CallAudioPacket } from "../audio.ts";
 import type { IncomingCallRoute, IncomingPlanetCall } from "../incoming.ts";
+import { AsyncWaitQueue } from "../async_wait_queue.ts";
+import {
+	cancellableAsyncGenerator,
+	type CancellableRead,
+} from "../cancellable_async_generator.ts";
 import { makeChunkHdr, parseFrameHeader } from "./framing.ts";
 import { depacketizeEas2 } from "./eas2.ts";
 import { unpackXrtp } from "./xrtp.ts";
@@ -1069,7 +1074,7 @@ export class PlanetTransport implements CallTransport {
 		receivingSpatialId?: number;
 	}>();
 	#videoQueue: EncodedVideoFrame[] = [];
-	#videoWaiters: Array<(frame: EncodedVideoFrame | null) => void> = [];
+	#videoWaiters = new AsyncWaitQueue<EncodedVideoFrame>();
 	#videoControl?: {
 		tranId: Uint8Array;
 		resolve: (data: Uint8Array | undefined) => void;
@@ -1097,7 +1102,7 @@ export class PlanetTransport implements CallTransport {
 		1_048_576,
 		(packet) => packet.byteLength,
 	);
-	#rtpWaiters: Array<(packet: Uint8Array | null) => void> = [];
+	#rtpWaiters = new AsyncWaitQueue<Uint8Array>();
 	#keepaliveTimer?: ReturnType<typeof setTimeout>;
 	#srcChanId = 1n;
 	#setupSent = false;
@@ -1275,12 +1280,12 @@ export class PlanetTransport implements CallTransport {
 		for (const waiter of this.#pending.splice(0)) {
 			waiter(callEndedError(reason));
 		}
-		for (const waiter of this.#rtpWaiters.splice(0)) waiter(null);
+		this.#rtpWaiters.close();
 		this.#resolveEnded(reason);
 		this.#videoQueue = [];
 		this.#videoControl?.reject(callEndedError(reason));
 		this.#videoControl = undefined;
-		for (const waiter of this.#videoWaiters.splice(0)) waiter(null);
+		this.#videoWaiters.close();
 	}
 
 	#debug(event: Record<string, unknown>) {
@@ -1876,9 +1881,7 @@ export class PlanetTransport implements CallTransport {
 
 	#enqueueRtp(packet: Uint8Array) {
 		if (this.#endReason) return;
-		const waiter = this.#rtpWaiters.shift();
-		if (waiter) waiter(packet);
-		else {
+		if (!this.#rtpWaiters.push(packet)) {
 			const evicted = this.#rtpQueue.push(packet, "drop-oldest");
 			if (evicted === null) {
 				this.#debug({
@@ -1937,11 +1940,13 @@ export class PlanetTransport implements CallTransport {
 		});
 	}
 
-	#takeRtp(): Promise<Uint8Array | null> {
-		if (this.#endReason) return Promise.resolve(null);
+	#takeRtp(): CancellableRead<Uint8Array> {
+		if (this.#endReason) {
+			return { promise: Promise.resolve(null), cancel() {} };
+		}
 		const queued = this.#rtpQueue.shift();
-		if (queued) return Promise.resolve(queued);
-		return new Promise((resolve) => this.#rtpWaiters.push(resolve));
+		if (queued) return { promise: Promise.resolve(queued), cancel() {} };
+		return this.#rtpWaiters.read();
 	}
 
 	async #decryptMediaRtp(
@@ -3852,20 +3857,44 @@ export class PlanetTransport implements CallTransport {
 		);
 	}
 
-	async *receive(): AsyncIterable<Uint8Array> {
-		if (!this.#srtpRecv) {
-			throw new Error("PlanetTransport.receive: media not established");
-		}
-		if (this.#groupJoined) {
-			for await (const packet of this.receiveAudio()) yield* packet.frames;
-			return;
-		}
-		while (true) {
-			const wire = await this.#takeRtp();
-			if (!wire) return;
-			try {
+	receive(): AsyncGenerator<Uint8Array, void, unknown> {
+		let initialized = false;
+		let grouped = false;
+		let groupPackets:
+			| AsyncGenerator<CallAudioPacket, void, unknown>
+			| undefined;
+		let groupFrames: Uint8Array[] = [];
+		const buffered: Uint8Array[] = [];
+		return cancellableAsyncGenerator(() => {
+			if (!initialized) {
+				if (!this.#srtpRecv) {
+					throw new Error("PlanetTransport.receive: media not established");
+				}
+				grouped = this.#groupJoined;
+				if (grouped) groupPackets = this.receiveAudio();
+				initialized = true;
+			}
+			if (grouped) {
+				const frame = groupFrames.shift();
+				if (frame) return { promise: Promise.resolve(frame), cancel() {} };
+				const packets = groupPackets!;
+				let cancelled = false;
+				const promise = packets.next().then((result) => {
+					if (cancelled || result.done) return null;
+					groupFrames = result.value.frames.slice(1);
+					return result.value.frames[0] ?? null;
+				});
+				return {
+					promise,
+					cancel() {
+						cancelled = true;
+						void packets.return().catch(() => {});
+					},
+				};
+			}
+			return this.#readDecoded(async (wire) => {
 				const decrypted = await this.#decryptMediaRtp(wire);
-				if (this.#endReason) return;
+				if (this.#endReason) return [];
 				const parsed = parseRtp(decrypted.rtp);
 				if (this.#opts.debug) {
 					this.#debug({
@@ -3878,31 +3907,18 @@ export class PlanetTransport implements CallTransport {
 						mediaKeySwitched: decrypted.switched,
 					});
 				}
-				yield parsed.payload;
-			} catch (e) {
-				this.#debug({
-					type: "media_decrypt_fail",
-					bytes: wire.length,
-					rtpPayloadType: wire.length > 1 ? wire[1] & 0x7f : undefined,
-					rtpSecondByte: wire.length > 1 ? wire[1] : undefined,
-					reason: e instanceof Error ? e.message : String(e),
-				});
-				// Drop unauthenticated media.
-			}
-		}
+				return [parsed.payload];
+			}, buffered);
+		});
 	}
 
-	async *receiveAudio(): AsyncIterable<CallAudioPacket> {
-		if (!this.#srtpRecv) {
-			throw new Error("PlanetTransport.receive: media not established");
-		}
-		while (true) {
-			const wire = await this.#takeRtp();
-			if (!wire) return;
-			try {
+	receiveAudio(): AsyncGenerator<CallAudioPacket, void, unknown> {
+		return this.#receiveDecoded(
+			async (wire) => {
 				const decrypted = await this.#decryptMediaRtp(wire);
-				if (this.#endReason) return;
+				if (this.#endReason) return [];
 				const outer = parseRtp(decrypted.rtp);
+				const packets: CallAudioPacket[] = [];
 				for (const audio of this.#groupJoined ? unpackXrtp(outer) : [outer]) {
 					if (this.#rtp && audio.payloadType !== this.#rtp.payloadType) {
 						continue;
@@ -3923,30 +3939,93 @@ export class PlanetTransport implements CallTransport {
 							audioFrames: frames.length,
 						});
 					}
-					yield { ssrc: audio.ssrc, timestamp: audio.timestamp, frames };
+					packets.push({
+						ssrc: audio.ssrc,
+						timestamp: audio.timestamp,
+						frames,
+					});
 				}
-			} catch (e) {
-				this.#debug({
-					type: "media_decrypt_fail",
-					bytes: wire.length,
-					rtpPayloadType: wire.length > 1 ? wire[1] & 0x7f : undefined,
-					rtpSecondByte: wire.length > 1 ? wire[1] : undefined,
-					reason: e instanceof Error ? e.message : String(e),
-				});
-			}
-		}
+				return packets;
+			},
+			() => {
+				if (!this.#srtpRecv) {
+					throw new Error("PlanetTransport.receive: media not established");
+				}
+			},
+		);
 	}
 
-	async *receiveVideo(): AsyncIterable<EncodedVideoFrame> {
-		if (!this.videoAvailable) return;
-		while (!this.#closed) {
-			const frame = this.#videoQueue.shift() ??
-				await new Promise<EncodedVideoFrame | null>(
-					(resolve) => this.#videoWaiters.push(resolve),
-				);
-			if (!frame || this.#closed) return;
-			yield frame;
+	#receiveDecoded<T>(
+		decode: (wire: Uint8Array) => Promise<T[]>,
+		validate: () => void,
+	): AsyncGenerator<T, void, unknown> {
+		const buffered: T[] = [];
+		let initialized = false;
+		return cancellableAsyncGenerator(() => {
+			if (!initialized) {
+				validate();
+				initialized = true;
+			}
+			return this.#readDecoded(decode, buffered);
+		});
+	}
+
+	#readDecoded<T>(
+		decode: (wire: Uint8Array) => Promise<T[]>,
+		buffered: T[],
+	): CancellableRead<T> {
+		const available = buffered.shift();
+		if (available !== undefined) {
+			return { promise: Promise.resolve(available), cancel() {} };
 		}
+		let current = this.#takeRtp();
+		let cancelled = false;
+		const promise = (async () => {
+			while (!cancelled) {
+				const wire = await current.promise;
+				if (cancelled || !wire) return null;
+				try {
+					const decoded = await decode(wire);
+					if (cancelled || this.#endReason) return null;
+					if (decoded.length > 0) {
+						for (let i = 1; i < decoded.length; i++) buffered.push(decoded[i]);
+						return decoded[0];
+					}
+				} catch (error) {
+					this.#debug({
+						type: "media_decrypt_fail",
+						bytes: wire.length,
+						rtpPayloadType: wire.length > 1 ? wire[1] & 0x7f : undefined,
+						rtpSecondByte: wire.length > 1 ? wire[1] : undefined,
+						reason: error instanceof Error ? error.message : String(error),
+					});
+				}
+				if (!cancelled) current = this.#takeRtp();
+			}
+			return null;
+		})();
+		return {
+			promise,
+			cancel() {
+				cancelled = true;
+				current.cancel();
+			},
+		};
+	}
+
+	#takeVideoFrame() {
+		const frame = this.#videoQueue.shift();
+		return frame
+			? { promise: Promise.resolve(frame), cancel() {} }
+			: this.#videoWaiters.read();
+	}
+
+	receiveVideo(): AsyncGenerator<EncodedVideoFrame, void, unknown> {
+		return cancellableAsyncGenerator(() =>
+			this.videoAvailable
+				? this.#takeVideoFrame()
+				: { promise: Promise.resolve(null), cancel() {} }
+		);
 	}
 
 	async setVideoEnabled(enabled: boolean): Promise<void> {
@@ -4189,9 +4268,8 @@ export class PlanetTransport implements CallTransport {
 		this.#updateRtpEndpointFromSource(source);
 		if (frame) {
 			const videoFrame = { ...frame, sourceMid: mid };
-			const waiter = this.#videoWaiters.shift();
-			if (waiter) waiter(videoFrame);
-			else {
+			const delivered = this.#videoWaiters.push(videoFrame);
+			if (!delivered) {
 				if (this.#videoQueue.length >= MAX_BUFFERED_VIDEO_FRAMES) {
 					this.#videoQueue.shift();
 				}
@@ -4223,9 +4301,7 @@ export class PlanetTransport implements CallTransport {
 				key: frame.key,
 			});
 		}
-		const waiter = this.#videoWaiters.shift();
-		if (waiter) waiter(frame);
-		else {
+		if (!this.#videoWaiters.push(frame)) {
 			if (this.#videoQueue.length >= MAX_BUFFERED_VIDEO_FRAMES) {
 				this.#videoQueue.shift();
 			}
