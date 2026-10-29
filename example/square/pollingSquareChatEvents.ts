@@ -1,5 +1,5 @@
-import { BaseClient } from "@evex/linejs/base";
-import { FileStorage } from "@evex/linejs/storage";
+import { BaseClient } from "@nezumi0627/vylinejs/base";
+import { FileStorage } from "@nezumi0627/vylinejs/storage";
 import fs from "fs";
 import path from "path";
 

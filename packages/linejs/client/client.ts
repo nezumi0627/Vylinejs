@@ -5,7 +5,7 @@ import { Chat } from "./features/chat/mod.ts";
 import { User } from "./features/user/mod.ts";
 import { TypedEventEmitter } from "../base/core/typed-event-emitter/index.ts";
 import { SquareMessage, TalkMessage } from "./features/message/mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type {
 	CompactMessageResponse,
 	SendCompactMessageOptions,

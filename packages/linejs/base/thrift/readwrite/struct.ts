@@ -1,4 +1,4 @@
-import * as LINETypes from "@evex/linejs-types";
+import * as LINETypes from "vylinejs-types";
 import type { Buffer } from "node:buffer";
 import { type NestedArray } from "../mod.ts";
 function map(

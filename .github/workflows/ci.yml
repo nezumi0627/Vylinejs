@@ -20,9 +20,6 @@ jobs:
         with:
           deno-version: v2.x
       - run: deno publish --dry-run
-        working-directory: ./packages/linejs
-      - run: deno publish --dry-run
-        working-directory: ./packages/types
 
   deno:
     name: "Testing"

@@ -20,7 +20,7 @@ import type {
 	SquareService_fetchMyEvents_result,
 	sync_args,
 	sync_result,
-} from "@evex/linejs-types";
+} from "vylinejs-types";
 
 import type { ParsedThrift } from "../thrift/mod.ts";
 import type { LooseType } from "@evex/loose-types";

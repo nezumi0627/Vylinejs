@@ -1,6 +1,6 @@
 // Call control-plane wrappers + CallSession glue.
 import type { Client } from "../../mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type { DeviceDetails } from "../../../base/mod.ts";
 import type { CodecFactory } from "./audio.ts";
 import { defaultCodecFactory } from "./audio.ts";

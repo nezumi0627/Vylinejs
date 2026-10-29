@@ -1,0 +1,5 @@
+.vitepress/search-index.json
+.vitepress/cache/
+.vitepress/dist/
+public/llms.txt
+public/llms-full.txt

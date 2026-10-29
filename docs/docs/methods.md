@@ -9,7 +9,7 @@ For example:
 ```ts
 await client.base.talk.sendMessage({
     to: "u...",
-    text: "Hello, LINEJS!",
+    text: "Hello, Vylinejs!",
     e2ee: true,
 });
 ```
@@ -18,6 +18,10 @@ This is an example of encrypting a text message with e2ee and sending it to a
 user.
 
 ## Square Methods
+
+Square/OpenChat methods are inherited from LINEJS and remain available as a
+legacy surface. Vylinejs does not actively support Square or promise routine
+maintenance for it. The example below shows the existing method shape only.
 
 All low-level SquareService methods are available on `client.base.square`.
 
@@ -40,7 +44,7 @@ If you just want simple api access or custom event handlers, you can use `BaseCl
 For example:
 
 ```ts
-import { BaseClient } from "@evex/linejs/base";
+import { BaseClient } from "@nezumi0627/vylinejs/base";
 
 
 const client = new BaseClient({ device: "DESKTOPWIN", version: "9.7.0.3556" });
@@ -66,6 +70,7 @@ await client.loginProcess.login({
 await client.loginProcess.login({
 	qr: true,
 });
+await client.loginProcess.ready();
 
 client.square // = SquareService
 client.talk // = TalkService
@@ -83,8 +88,8 @@ for await (const event of polling.listenSquareEvents()) {
 
 # Calling LINE REST endpoints directly
 
-Some LINE subsystems (Album/Moa, ...) speak JSON over
-HTTPS through the LEGY proxy rather than Thrift, but LINEJS's default
+Some LINE subsystems (Album/Moa, for example) speak JSON over
+HTTPS through the LEGY proxy rather than Thrift, but Vylinejs's default
 `getHeader("GET")` helper is tuned for Thrift and sets
 `accept: application/x-thrift` and `content-type: application/x-thrift`. If you
 call a JSON REST endpoint with those defaults you may get

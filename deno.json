@@ -1,9 +1,6 @@
 {
 	"workspace": [
-		"./packages/linejs",
-		"./packages/types",
-		"./packages/agent",
-		"./docs"
+		"./packages/linejs"
 	],
 	"fmt": {
 		"singleQuote": false,
@@ -13,6 +10,7 @@
 		]
 	},
 	"imports": {
+		"@evex/loose-types": "jsr:@evex/loose-types@^1.0.1",
 		"@std/assert": "jsr:@std/assert@^1.0.19",
 		"curve25519-js": "npm:curve25519-js@^0.0.4",
 		"node-bignumber": "npm:node-bignumber@^1.2.2",
@@ -34,9 +32,7 @@
 		"apk:sync": "deno run -A scripts/apk/sync_from_apk.ts",
 		"apk:decompile": "deno run -A scripts/apk/decompile.ts",
 		"apk:extract-thrift": "deno run -A scripts/apk/extract_thrift.ts",
-		"apk:extract-services": "deno run -A scripts/apk/extract_services.ts",
-		"docs:dev": "cd docs && deno task dev",
-		"docs:build": "cd docs && deno task build"
+		"apk:extract-services": "deno run -A scripts/apk/extract_services.ts"
 	},
 	"unstable": [
 		"byonm"

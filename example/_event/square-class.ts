@@ -3,7 +3,7 @@
  * @experimental
  * for square
  */
-import * as LINETypes from "@evex/linejs-types";
+import * as LINETypes from "@nezumi0627/vylinejs/types";
 import { type BaseClient, continueRequest } from "../core/mod.ts";
 import { TypedEventEmitter } from "../core/typed-event-emitter/index.ts";
 import { SquareMessage } from "./message-class.ts";

@@ -1,6 +1,6 @@
 /// <reference lib="dom"/>
 
-import type { BaseStorage } from "@evex/linejs/storage";
+import type { BaseStorage } from "@nezumi0627/vylinejs/storage";
 
 function successToPromise<T extends IDBRequest>(
 	request: T,

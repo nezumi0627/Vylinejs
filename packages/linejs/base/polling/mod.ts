@@ -1,5 +1,5 @@
 import type { BaseClient } from "../core/mod.ts";
-import type { Operation, SquareEvent } from "@evex/linejs-types";
+import type { Operation, SquareEvent } from "vylinejs-types";
 
 export interface SyncData {
 	square?: string;

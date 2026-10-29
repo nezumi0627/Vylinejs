@@ -2,7 +2,7 @@ import { getRSACrypto } from "./rsa-verify.ts";
 import { EMAIL_REGEX, PASSWORD_REGEX } from "./regex.ts";
 import { type Device, isV3Support } from "../core/utils/devices.ts";
 import { InternalError } from "../core/mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import { Buffer } from "node:buffer";
 import { LINEStruct } from "../thrift/mod.ts";
 import type { BaseClient } from "../core/mod.ts";

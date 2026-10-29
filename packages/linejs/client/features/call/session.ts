@@ -1,7 +1,7 @@
 // CallSession — control plane is real, transport is pluggable.
 // Group receive orchestration adapted from tqmane/vyline-api; terms: docs/licenses/tqmane-vyline-api-MIT.txt.
 import type { Client } from "../../mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type {
 	AudioDecoder,
 	AudioEncoder,

@@ -14,6 +14,10 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - run: deno test -A
       - run: deno check packages/linejs/base/mod.ts packages/linejs/client/mod.ts packages/agent/mod.ts
-      - run: deno task docs:build
+      - run: npm ci --prefix docs
+      - run: npm run build --prefix docs

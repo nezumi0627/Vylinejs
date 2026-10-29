@@ -30,14 +30,14 @@ const message = await client.base.obs.uploadMediaByE2EE({
 ```
 
 Implementation details live in
-[`packages/linejs/base/obs/mod.ts`](https://github.com/evex-dev/linejs/blob/main/packages/linejs/base/obs/mod.ts).
+[`packages/linejs/base/obs/mod.ts`](https://github.com/nezumi0627/Vylinejs/blob/main/packages/linejs/base/obs/mod.ts).
 
 ## Storage
 
-Storage helpers are exported from `@evex/linejs/storage`:
+Storage helpers are exported from `@nezumi0627/vylinejs/storage`:
 
 ```ts
-import { FileStorage, MemoryStorage } from "@evex/linejs/storage";
+import { FileStorage, MemoryStorage } from "@nezumi0627/vylinejs/storage";
 
 const storage = new FileStorage("./storage.json");
 ```
@@ -48,11 +48,11 @@ survive process restarts. Use `MemoryStorage` only for short-lived clients.
 ## Base Helpers
 
 Low-level helpers that are part of the public base package are exported from
-`@evex/linejs/base`:
+`@nezumi0627/vylinejs/base`:
 
 ```ts
-import { BaseClient, continueRequest, InternalError } from "@evex/linejs/base";
+import { BaseClient, continueRequest, InternalError } from "@nezumi0627/vylinejs/base";
 ```
 
 The package exports are defined in
-[`packages/linejs/deno.json`](https://github.com/evex-dev/linejs/blob/main/packages/linejs/deno.json).
+[`packages/linejs/deno.json`](https://github.com/nezumi0627/Vylinejs/blob/main/packages/linejs/deno.json).

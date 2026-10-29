@@ -1,6 +1,6 @@
 /// <reference lib="dom"/>
 
-import type { BaseStorage, Storage } from "@evex/linejs/storage";
+import type { BaseStorage, Storage } from "@nezumi0627/vylinejs/storage";
 export class LocalStorage implements BaseStorage {
 	prefix = "linejs:";
 	constructor() {

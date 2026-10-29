@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { Buffer } from "node:buffer";
-import type { PurchaseOrder as PurchaseOrderType } from "@evex/linejs-types";
+import type { PurchaseOrder as PurchaseOrderType } from "vylinejs-types";
 import { PurchaseOrder } from "./struct.ts";
 import { Protocols } from "./declares.ts";
 import { writeStruct } from "./write.ts";

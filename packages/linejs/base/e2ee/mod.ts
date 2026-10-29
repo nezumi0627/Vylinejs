@@ -1,10 +1,10 @@
 import { sharedKey } from "curve25519-js";
 import crypto from "node:crypto";
 import { Buffer } from "node:buffer";
-import type { Location, Message } from "@evex/linejs-types";
+import type { Location, Message } from "vylinejs-types";
 import nacl from "tweetnacl";
 import { InternalError } from "../core/utils/error.ts";
-import * as LINETypes from "@evex/linejs-types";
+import * as LINETypes from "vylinejs-types";
 import type { BaseClient } from "../core/mod.ts";
 import { persistMany } from "../storage/base.ts";
 import { ContentType } from "../thrift/readwrite/struct.ts";

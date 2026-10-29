@@ -1,4 +1,4 @@
-import { Thrift } from "@evex/linejs/thrift";
+import { Thrift } from "@nezumi0627/vylinejs/thrift";
 import { Buffer } from "node:buffer";
 
 // @ts-types="thrift-types"

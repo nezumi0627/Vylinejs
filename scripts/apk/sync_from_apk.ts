@@ -6,7 +6,7 @@
  *   1. apktool decompile (smali only — jadx output is optional, for humans)
  *   2. extract Thrift type defs from smali → diff against linejs thrift.ts
  *      → apply additive diff + safe in-place rewrites (direct-name matches)
- *   3. regenerate packages/types/line_types.ts via gen_typedef.ts
+ *   3. regenerate packages/linejs/types/line_types.ts via gen_typedef.ts
  *   4. deno fmt + deno check (sanity)
  *
  * Anything risky (Jaccard-only mismatches, enum value renames) is *reported*
@@ -239,7 +239,7 @@ if (import.meta.main) {
 	await runStep("deno fmt (generated files)", "deno", [
 		"fmt",
 		"packages/types/thrift.ts",
-		"packages/types/line_types.ts",
+		"packages/linejs/types/line_types.ts",
 		"packages/linejs/base/thrift/readwrite/struct.ts",
 	], { cwd: linejsRoot });
 	await runStep("deno check (entry point)", "deno", [

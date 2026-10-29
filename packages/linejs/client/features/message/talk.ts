@@ -3,7 +3,7 @@ import type {
 	Location,
 	Message,
 	MessageReactionType,
-} from "@evex/linejs-types";
+} from "vylinejs-types";
 import type { Client } from "../../client.ts";
 
 import type {

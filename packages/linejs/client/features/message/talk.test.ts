@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import type { Message } from "@evex/linejs-types";
+import type { Message } from "vylinejs-types";
 import type { Client } from "../../client.ts";
 import { TalkMessage } from "./talk.ts";
 

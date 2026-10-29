@@ -1,5 +1,5 @@
 import undici from "npm:undici";
-import { BaseClient } from "@evex/linejs/base";
+import { BaseClient } from "@nezumi0627/vylinejs/base";
 
 undici.setGlobalDispatcher(new undici.Agent({
   allowH2: true

@@ -11,7 +11,7 @@ export function main(
 	const argList: string[] = [];
 	const structList: string[] = [];
 	const result = [`
-    import * as LINETypes from "@evex/linejs-types"
+    import * as LINETypes from "vylinejs-types"
     import {
         type NestedArray,
     } from "../mod.ts";
@@ -136,8 +136,8 @@ export function main(
 	// schema that has none.
 	if (src.includes("as string | Buffer | undefined")) {
 		src = src.replace(
-			`import * as LINETypes from "@evex/linejs-types"`,
-			`import * as LINETypes from "@evex/linejs-types"\n    import type { Buffer } from "node:buffer";`,
+			`import * as LINETypes from "vylinejs-types"`,
+			`import * as LINETypes from "vylinejs-types"\n    import type { Buffer } from "node:buffer";`,
 		);
 	}
 

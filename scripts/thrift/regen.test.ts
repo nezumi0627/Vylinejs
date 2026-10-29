@@ -1,5 +1,5 @@
 /**
- * @description Guard that `packages/types/line_types.ts` and
+ * @description Guard that `packages/linejs/types/line_types.ts` and
  *              `packages/linejs/base/thrift/readwrite/struct.ts` are exactly
  *              what the generators produce from `packages/types/thrift.ts`.
  *
@@ -51,7 +51,7 @@ Deno.test("regenerating the Thrift artefacts on a clean tree is a no-op", async 
 
 		for (
 			const [generated, committed] of [
-				[genTypes, `${linejsRoot}packages/types/line_types.ts`],
+				[genTypes, `${linejsRoot}packages/linejs/types/line_types.ts`],
 				[
 					genWriters,
 					`${linejsRoot}packages/linejs/base/thrift/readwrite/struct.ts`,
@@ -90,7 +90,7 @@ Deno.test("thrift.ts binary markers survive into both generated artefacts", asyn
 	);
 
 	const types = await Deno.readTextFile(
-		`${linejsRoot}packages/types/line_types.ts`,
+		`${linejsRoot}packages/linejs/types/line_types.ts`,
 	);
 	assertEquals(types.includes("keyData: string | Buffer;"), true);
 

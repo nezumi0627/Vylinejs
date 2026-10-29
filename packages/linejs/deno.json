@@ -1,15 +1,22 @@
 {
-	"name": "@evex/linejs",
-	"version": "0.0.0",
+	"name": "@nezumi0627/vylinejs",
+	"version": "0.2.13",
 	"license": "MIT",
 	"exports": {
 		".": "./client/mod.ts",
 		"./base": "./base/mod.ts",
 		"./call": "./client/features/call/mod.ts",
 		"./storage": "./base/storage/mod.ts",
-		"./thrift": "./base/thrift/mod.ts"
+		"./thrift": "./base/thrift/mod.ts",
+		"./types": "./types/line_types.ts",
+		"./types/thrift": "./types/thrift.ts"
+	},
+	"publish": {
+		"exclude": ["**/*.test.ts"]
 	},
 	"imports": {
+		"vylinejs-types": "./types/line_types.ts",
+		"vylinejs-types/thrift": "./types/thrift.ts",
 		"@evex/loose-types": "jsr:@evex/loose-types@^1.0.1",
 		"thrift-types": "npm:@types/thrift@^0.10.17",
 		"crypto-js": "npm:crypto-js@^4.2.0",

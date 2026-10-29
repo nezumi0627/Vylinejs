@@ -1,0 +1,43 @@
+name: Publish JSR packages
+
+on:
+  push:
+    tags:
+      - "vylinejs-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Verify tag matches package versions
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#vylinejs-v}"
+          package_version="$(deno eval "JSON.parse(Deno.readTextFileSync('packages/linejs/deno.json')).version")"
+          if [[ "$package_version" != "$tag_version" ]]; then
+            echo "Tag $tag_version does not match package version $package_version" >&2
+            exit 1
+          fi
+      - name: Check and test
+        run: |
+          deno check packages/linejs/client/mod.ts packages/linejs/base/mod.ts packages/agent/mod.ts
+          deno test -A
+          node scripts/test_node_transport.mts
+          npm ci --prefix docs
+          npm run build --prefix docs
+      - name: Validate Vylinejs package
+        run: deno publish --dry-run
+      - name: Publish packages to JSR
+        run: deno publish

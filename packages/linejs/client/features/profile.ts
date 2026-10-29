@@ -1,4 +1,4 @@
-import type * as line from "@evex/linejs-types";
+import type * as line from "vylinejs-types";
 import type { Client } from "../mod.ts";
 
 /**

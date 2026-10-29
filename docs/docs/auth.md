@@ -1,105 +1,102 @@
-# Authentication
+# Authentication and session storage
 
-You can authenticate with password login, QR login, or an existing auth token.
+Vylinejs supports password login, QR login, login with an existing auth token, and restoration from persistent storage. LINE controls the authentication protocol and may require additional device verification.
 
-## Login
+## Password login
 
-Login helpers return a high-level `Client`. Each helper also needs client init
-options, including the device to emulate.
+Use password login only when an interactive login is needed. If `pincode` is omitted, Vylinejs generates a random six-digit PIN for the E2EE login handshake. The example uses Deno environment access; grant only the required environment permission.
 
-### `loginWithPassword`
-
-Here is an example:
 ```ts
-import { loginWithPassword } from "@evex/linejs";
+import { loginWithPassword } from "@nezumi0627/vylinejs";
 
 const client = await loginWithPassword({
-  email: 'you@example.com', // e-mail address
-  password: 'password', // Password
-  onPincodeRequest(pincode) {
-    console.log('Enter this pincode to your LINE app:', pincode)
-  }
+	email: Deno.env.get("LINE_EMAIL")!,
+	password: Deno.env.get("LINE_PASSWORD")!,
+	onPincodeRequest(pin) {
+		console.log("Enter this PIN in LINE:", pin);
+	},
 }, {
-  device: "IOSIPAD",
-})
-```
-
-email and password are required. If you omit `pincode`, LINEJS generates a random
-six-digit PIN for the E2EE login handshake. On first login, enter that PIN in
-the LINE app to enable E2EE.
-`onPincodeRequest` can receive a pincode and you can output it with that method to tell users pincode.
-
-### `loginWithQR`
-
-In this way, email and password is not needed.
-
-```ts
-import { loginWithQR } from "@evex/linejs";
-
-const client = await loginWithQR({
-  onReceiveQRUrl(url) {
-    console.log("Access this URL:", url);
-  },
-  onPincodeRequest(pincode) {
-    console.log("Enter this pincode to your LINE app:", pincode);
-  },
-}, {
-  device: "ANDROIDSECONDARY",
-})
-```
-
-The function gives an url to read on mobile. You have to create QR with yourself if you want to show QR code, this is because of LINEJS doesn't support creating QR code.
-
-## With authToken
-
-There is a possibility to banned your account if you tried login many times, so you should use authToken to get authenticated.
-
-```ts
-import { loginWithAuthToken } from "@evex/linejs";
-
-const client = await loginWithAuthToken("YOUR_AUTH_TOKEN", {
-  device: "IOSIPAD",
+	device: "IOSIPAD",
 });
 ```
 
-### Save and restore a session
+Provide credentials from a private secret store or environment configuration. Do not hard-code them in source or print tokens and PINs to shared logs.
 
-The supplied storage persists `accessToken`, `refreshToken`, and `expire`.
-Refresh tokens are rotated and saved when LINE returns a new one. Each
-authenticated API request checks the server supplied deadline and refreshes
-when it is within 60 seconds; `loginWithStoredAuthToken` does this before
-loading the profile. Requests also retry once when LINE reports that a token
-must refresh. A background timer also refreshes before expiry while the client
-is idle; failures are retried after five minutes.
+## QR login
+
+QR login avoids passing a password to the library. Vylinejs returns a URL through `onReceiveQRUrl`; the host application is responsible for rendering that URL as a QR code.
 
 ```ts
-import { loginWithPassword, loginWithStoredAuthToken } from "@evex/linejs";
-import { FileStorage } from "@evex/linejs/storage";
+import { loginWithQR } from "@nezumi0627/vylinejs";
 
-const storage = new FileStorage("./session.json");
-const init = { device: "IOSIPAD" as const, storage };
-
-const client = await (async () => {
-  if (await storage.get("accessToken") || await storage.get("refreshToken")) {
-    return await loginWithStoredAuthToken(init);
-  }
-  return await loginWithPassword({
-    email: "you@example.com",
-    password: "password",
-    onPincodeRequest(pin) {
-      console.log("Enter this pincode in LINE:", pin);
-    },
-  }, init);
-})();
-// Use client here.
+const client = await loginWithQR({
+	onReceiveQRUrl(url) {
+		showQrCode(url);
+	},
+	onPincodeRequest(pin) {
+		showPinForLineConfirmation(pin);
+	},
+}, {
+	device: "ANDROIDSECONDARY",
+});
 ```
 
-If LINE rejects a revoked credential, sign in interactively again. Password
-login does not run automatically after a restore failure. A fresh password
-login can replace the stored credentials even when the previous refresh token
-is expired or revoked.
+`showQrCode` and `showPinForLineConfirmation` are application functions. The library does not provide a UI or QR-image renderer.
 
-`session.json` contains plaintext access and refresh tokens plus E2EE key
-material. Exclude it from version control, restrict file access to your user,
-and do not log or share its contents. Load your password from private
-configuration or an environment variable rather than committing it.
+## Restore a saved session
+
+`FileStorage` stores access and refresh credentials together with E2EE and protocol state. Reuse the same persistent storage when restoring a session. The restore helper refreshes credentials near their server-provided deadline and throws if no saved session exists or LINE rejects it; it does not silently fall back to password login.
+
+```ts
+import {
+	loginWithPassword,
+	loginWithStoredAuthToken,
+} from "@nezumi0627/vylinejs";
+import { FileStorage } from "@nezumi0627/vylinejs/storage";
+
+const storage = new FileStorage("./private/line-session.json");
+const init = { device: "IOSIPAD" as const, storage };
+
+let client;
+if (await storage.get("accessToken") || await storage.get("refreshToken")) {
+	client = await loginWithStoredAuthToken(init);
+} else {
+	client = await loginWithPassword({
+		email: Deno.env.get("LINE_EMAIL")!,
+		password: Deno.env.get("LINE_PASSWORD")!,
+		onPincodeRequest(pin) {
+			console.log("Enter this PIN in LINE:", pin);
+		},
+	}, init);
+}
+```
+
+The credentials are plaintext when using `FileStorage`. Restrict filesystem permissions, exclude the file from version control and backups that are not encrypted, and never share it. `EncryptedStorage` can encrypt values with AES-GCM, but the application must keep its non-exportable key in an OS keychain or another secret manager. Vylinejs does not save or derive that key.
+
+```ts
+import { EncryptedStorage, FileStorage } from "@nezumi0627/vylinejs/storage";
+
+const key = await loadNonExportableAesKeyFromSecretStore();
+const storage = new EncryptedStorage(
+	new FileStorage("./private/line-session.enc.json"),
+	key,
+);
+```
+
+`loadNonExportableAesKeyFromSecretStore` represents application code; Vylinejs does not provide a platform keychain adapter.
+
+## Existing auth token
+
+`loginWithAuthToken` accepts a token value or its supported structured token input. An auth token alone does not import E2EE private keys. Use the same persistent storage that contains the needed E2EE key material when available; do not clear key history to troubleshoot a decryption error.
+
+```ts
+import { loginWithAuthToken } from "@nezumi0627/vylinejs";
+import { FileStorage } from "@nezumi0627/vylinejs/storage";
+
+const client = await loginWithAuthToken(Deno.env.get("LINE_AUTH_TOKEN")!, {
+	device: "IOSIPAD",
+	storage: new FileStorage("./private/line-session.json"),
+});
+```
+
+If a credential is revoked, complete an interactive login again. For guidance about historical E2EE keys and account-specific limitations, see [Features and support status](./features.md) and the [stability notes](../VYLINEJS_STABILITY.md).

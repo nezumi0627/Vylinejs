@@ -1,4 +1,4 @@
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import { decodeMpKey, sha256 } from "./planet/crypto.ts";
 
 /** The route supplied by an authenticated incoming operation, not acquireRoute. */

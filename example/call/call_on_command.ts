@@ -2,9 +2,9 @@ import {
 	loginWithAuthToken,
 	loginWithQR,
 	type TalkMessage,
-} from "@evex/linejs";
-import type { Device } from "@evex/linejs/base";
-import { FileStorage } from "@evex/linejs/storage";
+} from "@nezumi0627/vylinejs";
+import type { Device } from "@nezumi0627/vylinejs/base";
+import { FileStorage } from "@nezumi0627/vylinejs/storage";
 import {
 	decodeWavSync,
 	opusCodecFactory,
@@ -12,7 +12,7 @@ import {
 	PlanetTransport,
 	type PlanetTransportOpts,
 	resampleLinear,
-} from "@evex/linejs/call";
+} from "@nezumi0627/vylinejs/call";
 
 type PlanetMediaKeyMode = NonNullable<PlanetTransportOpts["mediaKeyMode"]>;
 

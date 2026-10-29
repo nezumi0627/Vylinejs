@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { type BaseClient, InternalError } from "../core/mod.ts";
 import { MimeType } from "./mime.ts";
 import crypto from "node:crypto";
-import type { Message } from "@evex/linejs-types";
+import type { Message } from "vylinejs-types";
 import { writeStruct } from "../thrift/readwrite/write.ts";
 // @ts-types="thrift-types"
 import * as thrift from "thrift";

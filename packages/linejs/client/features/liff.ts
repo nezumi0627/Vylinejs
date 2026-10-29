@@ -85,7 +85,7 @@ export interface LiffClient {
 		chatMid?: string;
 		liffId?: string;
 		lang?: string;
-	}): Promise<import("@evex/linejs-types").LiffViewResponse>;
+	}): Promise<import("vylinejs-types").LiffViewResponse>;
 	issueSubView(
 		...args: Parameters<
 			import("../../base/service/liff/mod.ts").LiffService["issueSubLiffView"]

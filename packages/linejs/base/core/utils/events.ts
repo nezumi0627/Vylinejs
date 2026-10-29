@@ -1,4 +1,4 @@
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type { SyncData } from "../../polling/mod.ts";
 import type { LooseType } from "@evex/loose-types";
 // import type { Operation, SquareMessage, TalkMessage } from "../../event/mod.ts";
