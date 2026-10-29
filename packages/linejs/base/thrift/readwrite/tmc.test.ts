@@ -57,3 +57,12 @@ Deno.test("TMoreCompactProtocol resets per-message state when reused", () => {
 	assertEquals(protocol.stringTable, []);
 	assertEquals(protocol.res, {});
 });
+
+Deno.test("TMoreCompactProtocol copies binary fields away from its input buffer", () => {
+	const input = Buffer.from([0, 0, 0, 1, 0xa0, 0, 1, 3, 0xff, 0xfe, 0xfd]);
+	const protocol = new TMoreCompactProtocol(input);
+	const binary = protocol.res[0] as Buffer;
+
+	input[8] = 0;
+	assertEquals([...binary], [0xff, 0xfe, 0xfd]);
+});

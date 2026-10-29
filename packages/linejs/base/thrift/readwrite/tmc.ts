@@ -1,4 +1,4 @@
-import type { Buffer } from "node:buffer";
+import { Buffer } from "node:buffer";
 import type { LooseType } from "@evex/loose-types";
 
 /**
@@ -343,7 +343,10 @@ export class TMoreCompactProtocol {
 		try {
 			result = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
 		} catch {
-			result = buffer;
+			// Keep binary values independent from the input frame. This lets push
+			// decoding read directly from a frame view without retaining its whole
+			// backing chunk through a small Buffer subarray.
+			result = Buffer.from(buffer);
 		}
 
 		this.currentPosition += length;
