@@ -9,7 +9,6 @@ import type { BaseClient } from "../core/mod.ts";
 import type { Buffer } from "node:buffer";
 import { TypedEventEmitter } from "../core/typed-event-emitter/index.ts";
 import { TalkMessage } from "./message-class.ts";
-import type { TimelineResponse } from "../timeline/mod.ts";
 import type { LooseType } from "@evex/loose-types";
 
 type GroupEvents = {
@@ -75,67 +74,6 @@ function toBit(num: number): number[] {
 		i++;
 	}
 	return nums;
-}
-
-export class Note {
-	constructor(
-		_mid: string,
-		private client: BaseClient,
-	) {}
-
-	createPost(options: {
-		text?: string;
-		sharedPostId?: string;
-		textSizeMode?: "AUTO" | "NORMAL";
-		backgroundColor?: string;
-		textAnimation?: "NONE" | "SLIDE" | "ZOOM" | "BUZZ" | "BOUNCE" | "BLINK";
-		readPermissionType?: "ALL" | "FRIEND" | "GROUP" | "EVENT" | "NONE";
-		readPermissionGids?: string[];
-		holdingTime?: number;
-		stickerIds?: string[];
-		stickerPackageIds?: string[];
-		locationLatitudes?: number[];
-		locationLongitudes?: number[];
-		locationNames?: string[];
-		mediaObjectIds?: string[];
-		mediaObjectTypes?: string[];
-		sourceType?: string;
-	}): Promise<TimelineResponse> {
-		(options as LooseType).homeId = this.mid;
-		return this.client.timeline.createPost(options as LooseType);
-	}
-	deletePost(options: {
-		postId: string;
-	}): Promise<TimelineResponse> {
-		(options as LooseType).homeId = this.mid;
-		return this.client.timeline.deletePost(options as LooseType);
-	}
-
-	listPost(
-		options: {
-			homeId?: string;
-			postId?: string;
-			updatedTime?: number;
-			sourceType?: string;
-		} = {},
-	): Promise<TimelineResponse> {
-		(options as LooseType).homeId = this.mid;
-		return this.client.timeline.listPost(options as LooseType);
-	}
-
-	getPost(options: {
-		postId: string;
-	}): Promise<TimelineResponse> {
-		(options as LooseType).homeId = this.mid;
-		return this.client.timeline.getPost(options as LooseType);
-	}
-	sharePost(options: {
-		postId: string;
-		chatMid: string;
-	}): Promise<TimelineResponse> {
-		(options as LooseType).homeId = this.mid;
-		return this.client.timeline.sharePost(options as LooseType);
-	}
 }
 
 /**
@@ -307,7 +245,6 @@ export class Group extends TypedEventEmitter<GroupEvents> {
 	preventedJoinByTicket: boolean;
 	invitationTicket: string;
 	notificationDisabled: boolean;
-	note: Note;
 
 	/**
 	 * @description Generate from groupMid or {Chat}.
@@ -393,7 +330,6 @@ export class Group extends TypedEventEmitter<GroupEvents> {
 		const { groupExtra } = chat.extra;
 		this.preventedJoinByTicket = groupExtra.preventedJoinByTicket;
 		this.invitationTicket = groupExtra.invitationTicket;
-		this.note = new Note(this.mid, client);
 		// client.on("message",(msg)=>msg.to===this.mid:this.emit("message",msg)?undefined)
 	}
 

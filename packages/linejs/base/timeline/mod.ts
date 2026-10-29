@@ -1,15 +1,20 @@
-// deno-lint-ignore-file no-explicit-any
 import { Buffer } from "node:buffer";
 import crypto from "node:crypto";
 import type { BaseClient } from "../mod.ts";
 import type { LooseType } from "@evex/loose-types";
 
+/** @deprecated LINE VOOM ended on 2026-09-30. */
 export type TimelineResponse<T = LooseType> = {
 	code: number;
 	message: string;
 	result: T;
 };
 
+/**
+ * @deprecated LINE VOOM ended on 2026-09-30. The compatibility API remains
+ * temporarily but all methods fail immediately; it will be removed in a
+ * future major version.
+ */
 export class Timeline {
 	protected timelineToken: string | undefined;
 	public timelineHeaders: Record<string, string | undefined> = {};
@@ -18,30 +23,12 @@ export class Timeline {
 		this.client = client;
 	}
 
-	public async initTimeline() {
-		if (this.timelineToken) {
-			return;
-		}
-		this.timelineToken = (
-			await this.client.channel.approveChannelAndIssueChannelToken({
-				channelId: "1341209850",
-			})
-		).channelAccessToken;
-		this.timelineHeaders = {
-			"x-line-bdbtemplateversion": "v1",
-			"x-lsr": "JP",
-			"user-agent": this.client.request.userAgent,
-			"x-line-channeltoken": this.timelineToken,
-			"accept-encoding": "gzip",
-			"x-line-global-config":
-				"discover.enable=true; follow.enable=true; reboot.phase=scenario",
-			"x-line-mid": this.client.profile!.mid,
-			"x-line-access": this.client.authToken,
-			"content-type": "application/json; charset=UTF-8",
-			"x-line-application": this.client.request.systemType,
-			"x-lal": "ja_JP",
-			"x-lpv": "1",
-		};
+	public initTimeline(): Promise<void> {
+		return Promise.reject(
+			new Error(
+				"LINE VOOM ended on 2026-09-30 and is no longer available. The Vylinejs Timeline API is deprecated and will be removed in a future major version.",
+			),
+		);
 	}
 
 	public async createPost(options: {

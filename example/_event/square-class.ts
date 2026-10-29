@@ -7,7 +7,6 @@ import * as LINETypes from "@evex/linejs-types";
 import { type BaseClient, continueRequest } from "../core/mod.ts";
 import { TypedEventEmitter } from "../core/typed-event-emitter/index.ts";
 import { SquareMessage } from "./message-class.ts";
-import { Note } from "./talk-class.ts";
 import type { LooseType } from "@evex/loose-types";
 
 type SquareEvents = {
@@ -71,7 +70,6 @@ export class Square extends TypedEventEmitter<SquareEvents> {
 
 	public feature: LINETypes.SquareFeatureSet;
 
-	public note: Note;
 
 	constructor(
 		public rawSouce: LINETypes.GetSquareResponse,
@@ -105,7 +103,6 @@ export class Square extends TypedEventEmitter<SquareEvents> {
 		this.me = new SquareMember(myMembership, client);
 		this.authority = squareAuthority;
 		this.noteStatus = noteStatus;
-		this.note = new Note(this.mid, this.client);
 		this.feature = squareFeatureSet as LINETypes.SquareFeatureSet;
 		this.status = squareStatus;
 		this.memberCount = squareStatus.memberCount;
@@ -230,7 +227,6 @@ export class SquareChat extends TypedEventEmitter<SquareChatEvents> {
 	public memberCount: number;
 	public status: LINETypes.SquareChatStatusWithoutMessage;
 	public syncToken?: string;
-	public note: Note;
 	public polling_delay = 2000;
 	constructor(
 		public rawSouce: LINETypes.GetSquareChatResponse,
@@ -260,7 +256,6 @@ export class SquareChat extends TypedEventEmitter<SquareChatEvents> {
 		this.mymid = squareChatMember.squareMemberMid;
 		this.memberCount = squareChatStatus.otherStatus.memberCount;
 		this.status = squareChatStatus.otherStatus;
-		this.note = new Note(this.squareMid, this.client);
 		if (polling) {
 			this.polling();
 		}

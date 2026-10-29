@@ -1,133 +1,50 @@
-import { assert, assertEquals } from "@std/assert";
-import { createVoomClient, VoomChannelId } from "./voom.ts";
+import { assertEquals, assertRejects } from "@std/assert";
+import { createVoomClient, getChannelToken, voomRest } from "./voom.ts";
+import { Client } from "../client.ts";
+
+const discontinuedMessage =
+	"LINE VOOM ended on 2026-09-30 and is no longer available";
 
 function makeFake() {
-	const issued: string[] = [];
-	const fetched: { url: string; headers: Record<string, string> }[] = [];
-	const fakeClient = {
+	let issued = 0;
+	let fetched = 0;
+	const client = {
 		base: {
-			profile: { mid: "u-test-mid" },
-			request: {
-				systemType: "ANDROID\t26.6.2",
-				userAgent: "Line/26.6.2",
-			},
 			channel: {
-				issueChannelToken(opts: { channelId: string }) {
-					issued.push(opts.channelId);
-					return Promise.resolve({ token: `tok-${opts.channelId}` });
+				issueChannelToken() {
+					issued++;
+					return Promise.resolve({ token: "token" });
 				},
 			},
-			fetch(url: string, init: { headers: Record<string, string> }) {
-				fetched.push({ url, headers: { ...init.headers } });
-				return Promise.resolve(
-					new Response(JSON.stringify({ code: 200, result: { fake: true } }), {
-						headers: { "content-type": "application/json" },
-					}),
-				);
+			fetch() {
+				fetched++;
+				return Promise.resolve(new Response("{}"));
 			},
 		},
-		authToken: "primary-token",
 	};
 	return {
-		client: fakeClient as never,
-		profile: fakeClient.base.profile,
-		issued,
-		fetched,
+		client: client as never,
+		counts: () => ({ issued, fetched }),
 	};
 }
 
-Deno.test("VoomClient.getToken — mints via issueChannelToken with object arg", async () => {
-	const { client, issued } = makeFake();
-	const vc = createVoomClient(client);
-	const t = await vc.getToken("TIMELINE");
-	assertEquals(t, "tok-1341209950");
-	assertEquals(issued, [VoomChannelId.TIMELINE]);
-});
+Deno.test("VOOM compatibility APIs fail fast without network or token calls", async () => {
+	const { client, counts } = makeFake();
+	const voom = createVoomClient(client);
+	const publicClient = new Client({} as never);
+	const calls = [
+		() => voom.getToken("TIMELINE"),
+		() => voom.call("TIMELINE", { path: "/api/v57/post/list.json" }),
+		() => voom.feed(),
+		() => voom.timelineStatus(),
+		() => getChannelToken(client, "1341209950"),
+		() => voomRest(client, { path: "/api/v57/post/list.json" }),
+		() => publicClient.voomRest({ path: "/api/v57/post/list.json" }),
+		() => publicClient.voom.feed(),
+	];
 
-Deno.test("VoomClient.getToken — caches per-channel", async () => {
-	const { client, issued } = makeFake();
-	const vc = createVoomClient(client);
-	await vc.getToken("TIMELINE");
-	await vc.getToken("TIMELINE");
-	await vc.getToken("NOTE");
-	assertEquals(issued.length, 2);
-	assertEquals(issued, [VoomChannelId.TIMELINE, VoomChannelId.NOTE]);
-});
-
-Deno.test("VoomClient.getToken — coalesces concurrent channel-token requests", async () => {
-	const { client, issued } = makeFake();
-	const vc = createVoomClient(client);
-	const tokens = await Promise.all([
-		vc.getToken("TIMELINE"),
-		vc.getToken("TIMELINE"),
-		vc.getToken("TIMELINE"),
-	]);
-	assertEquals(tokens, Array(3).fill(`tok-${VoomChannelId.TIMELINE}`));
-	assertEquals(issued, [VoomChannelId.TIMELINE]);
-});
-
-Deno.test("VoomClient.getToken — does not reuse a token after account switch", async () => {
-	const { client, profile, issued } = makeFake();
-	const vc = createVoomClient(client);
-	await vc.getToken("TIMELINE");
-	profile.mid = "u-another-account";
-	await vc.getToken("TIMELINE");
-	assertEquals(issued, [VoomChannelId.TIMELINE, VoomChannelId.TIMELINE]);
-});
-
-Deno.test("VoomClient.call — X-Line-ChannelToken + X-Line-Mid headers (live-verified)", async () => {
-	const { client, fetched } = makeFake();
-	const vc = createVoomClient(client);
-	const r = await vc.call("TIMELINE", { path: "/api/v57/post/list.json" });
-	assertEquals(r.code, 200);
-	assert(r.result);
-	assertEquals(fetched.length, 1);
-	assertEquals(
-		fetched[0].url,
-		"https://gw.line.naver.jp/mh/api/v57/post/list.json",
-	);
-	assertEquals(fetched[0].headers["X-Line-ChannelToken"], "tok-1341209950");
-	assertEquals(fetched[0].headers["X-Line-Mid"], "u-test-mid");
-});
-
-Deno.test("VoomClient.feed — default postLimit/followingMaxPage", async () => {
-	const { client, fetched } = makeFake();
-	const vc = createVoomClient(client);
-	await vc.feed();
-	const u = new URL(fetched[0].url);
-	assertEquals(u.pathname, "/mh/api/v57/post/list.json");
-	assertEquals(u.searchParams.get("postLimit"), "10");
-	assertEquals(u.searchParams.get("followingMaxPage"), "2");
-});
-
-Deno.test("VoomClient.feed — custom limits", async () => {
-	const { client, fetched } = makeFake();
-	const vc = createVoomClient(client);
-	await vc.feed({ postLimit: 25, followingMaxPage: 5 });
-	const u = new URL(fetched[0].url);
-	assertEquals(u.searchParams.get("postLimit"), "25");
-	assertEquals(u.searchParams.get("followingMaxPage"), "5");
-});
-
-Deno.test("VoomClient.timelineStatus — uses /tl prefix + TIMELINE channel token (live-verified)", async () => {
-	const { client, fetched, issued } = makeFake();
-	const vc = createVoomClient(client);
-	await vc.timelineStatus();
-	assertEquals(issued, [VoomChannelId.TIMELINE]);
-	const u = new URL(fetched[0].url);
-	assertEquals(u.pathname, "/tl/api/v57/timeline/tab/status.json");
-	assertEquals(
-		fetched[0].headers["X-Line-ChannelToken"],
-		`tok-${VoomChannelId.TIMELINE}`,
-	);
-});
-
-Deno.test("VoomClient.call — routing prefix selects the right gateway path", async () => {
-	const { client, fetched } = makeFake();
-	const vc = createVoomClient(client);
-	await vc.call("ALBUM", { routing: "ALBUM", path: "/api/v1.0/initialize" });
-	assertEquals(
-		new URL(fetched[0].url).pathname,
-		"/ext/album/api/v1.0/initialize",
-	);
+	for (const call of calls) {
+		await assertRejects(call, Error, discontinuedMessage);
+	}
+	assertEquals(counts(), { issued: 0, fetched: 0 });
 });
