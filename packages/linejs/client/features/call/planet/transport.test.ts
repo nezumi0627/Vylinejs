@@ -80,6 +80,22 @@ function makeRoute(peer = generateEphemeralKeypair(), port = 9): CallRouteLike {
 	} as unknown as CallRouteLike;
 }
 
+Deno.test("Planet receive APIs defer setup errors until iteration", async () => {
+	const transport = new PlanetTransport({ localMid: "u-local" });
+	const receive = transport.receive();
+	const receiveAudio = transport.receiveAudio();
+	await assertRejects(
+		() => receive.next(),
+		Error,
+		"PlanetTransport.receive: media not established",
+	);
+	await assertRejects(
+		() => receiveAudio.next(),
+		Error,
+		"PlanetTransport.receive: media not established",
+	);
+});
+
 function concatBytes(parts: Uint8Array[]): Uint8Array {
 	const len = parts.reduce((n, p) => n + p.length, 0);
 	const out = new Uint8Array(len);

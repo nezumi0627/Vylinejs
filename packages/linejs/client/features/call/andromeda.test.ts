@@ -4,6 +4,16 @@ import dgram from "node:dgram";
 import { AndromedaTransport } from "./andromeda.ts";
 import { buildSip, parseSip } from "./sip.ts";
 
+Deno.test("AndromedaTransport.receive defers setup errors until iteration", async () => {
+	const transport = new AndromedaTransport({ localMid: "u-test-mid" });
+	const iterator = transport.receive();
+	await assertRejects(
+		() => iterator.next(),
+		Error,
+		"AndromedaTransport.receive: call not established (INVITE first)",
+	);
+});
+
 async function spawnMockCscf(): Promise<{
 	host: string;
 	port: number;
