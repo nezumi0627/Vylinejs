@@ -1,8 +1,13 @@
 # Step 2: Log in with QR
 
-Use QR login to avoid putting a LINE password in the application. The library
-returns a login URL and PIN; the host application decides how to render the
-URL as a QR code.
+This step assumes Vylinejs is installed. QR login lets the application sign in
+without passing a LINE password to the library.
+
+1. `loginWithQR()` starts the login flow.
+2. In `onReceiveQRUrl`, show the URL as a QR code in your app. Vylinejs returns
+   the URL but does not create or display the QR image.
+3. In `onPincodeRequest`, show the PIN to the user so they can confirm it in
+   LINE. After confirmation, the function returns an authenticated client.
 
 ```ts
 import { loginWithQR } from "@nezumi0627/vylinejs";
@@ -20,6 +25,10 @@ const client = await loginWithQR({
 
 console.log((await client.getMyProfile()).displayName);
 ```
+
+The callback messages above are placeholders for your application's UI. The
+last line is a small check that login completed and the client can make an
+authenticated request.
 
 Do not publish the login URL, PIN, auth token, or stored session. For a
 repeatable local example and session restore options, continue to the

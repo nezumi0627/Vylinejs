@@ -17,14 +17,10 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 .VPNavBarTitle .title::after { content:"Docs"; border-left:1px solid var(--vy-rule); margin-left:4px; padding-left:13px; color:var(--vy-muted); font-size:13px; font-weight:450; letter-spacing:0; }
 .VPNavBar .content-body { gap:12px; }
 .VPNavBarMenuLink { font-size:12px !important; }
-/* Keep navigation geometry identical when VitePress swaps locale labels. */
-.VPNavBarMenu .list > li > .VPNavBarMenuLink { box-sizing:border-box; width:100%; justify-content:center; white-space:nowrap; }
-.VPNavBarMenu .list > li:nth-child(1) { width:64px; flex:none; }
-.VPNavBarMenu .list > li:nth-child(2) { width:100px; flex:none; }
-.VPNavBarMenu .list > li:nth-child(3) { width:76px; flex:none; }
-.VPNavBarMenu .list > li:nth-child(4) { width:104px; flex:none; }
-.VPNavBarMenu .list > li:nth-child(5) { width:72px; flex:none; }
-.VPNavBarMenu .list > li:nth-child(6) { width:84px; flex:none; }
+/* Equal navigation slots keep English and Japanese labels aligned. */
+.VPNavBarMenu .list { gap:4px; }
+.VPNavBarMenu .list > li { width:88px; flex:none; }
+.VPNavBarMenu .list > li > .VPNavBarMenuLink { box-sizing:border-box; width:100%; justify-content:center; padding-inline:4px; white-space:nowrap; }
 .VPNavBarSearch { display:none !important; }
 .VPSidebar { background:var(--vy-paper) !important; border-right:1px solid var(--vy-rule); scrollbar-width:thin; scrollbar-color:var(--vy-rule) transparent; padding-right:22px !important; }
 .VPSidebar .curtain { background:var(--vy-paper) !important; }
@@ -65,7 +61,7 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 .vy-package code { color:var(--vy-ink); font-family:var(--vp-font-family-mono); font-size:11px; }
 .vy-context { align-self:start; padding-top:5px; font-size:12px; line-height:1.8; }
 .vy-context p { color:var(--vy-muted); margin:0 0 12px; }
-.vy-context a { display:block; padding:7px 0; color:var(--vy-ink); border-bottom:1px solid var(--vy-rule); }
+.vy-context a { display:flex; align-items:center; gap:6px; padding:7px 0; color:var(--vy-ink); border-bottom:1px solid var(--vy-rule); }
 .vy-context a:hover { color:var(--vy-green-600); }
 .vy-workspace { display:grid; grid-template-columns:minmax(0,1fr) 210px; gap:48px; }
 .vyline-home h2 { margin:0 0 18px; font-size:20px; line-height:1.4; font-weight:600; letter-spacing:-.5px; }
@@ -78,7 +74,7 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 .vy-command button { color:var(--vy-muted); border:1px solid var(--vy-rule); border-radius:var(--vy-radius); padding:4px 8px; font-size:11px; cursor:pointer; }
 .vy-command button:hover { color:var(--vy-green-600); border-color:var(--vy-green-600); }
 .vy-install-note { color:var(--vy-muted); font-size:12px; line-height:1.7; margin:12px 0 22px; }
-.vy-primary { display:inline-flex; min-height:40px; align-items:center; gap:24px; padding:0 15px; border-radius:var(--vy-radius); background:var(--vy-green-600); color:white; font-size:13px; font-weight:600; }
+.vy-primary { display:inline-flex; min-height:40px; align-items:center; gap:10px; padding:0 15px; border-radius:var(--vy-radius); background:var(--vy-green-600); color:white; font-size:13px; font-weight:600; }
 .dark .vy-primary { color:#10251b; }
 .vy-primary:hover { background:var(--vy-green-700); }
 .vy-steps { list-style:none; padding:0; margin:0; }
@@ -87,18 +83,23 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 .vy-steps a:hover { color:var(--vy-green-600); }
 .vy-example { margin-top:40px; }
 .vy-example-top { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
-.vy-example-top a { font-size:12px; color:var(--vy-green-600); }
+.vy-example-top a { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--vy-green-600); }
+.vy-action-arrow { width:14px; height:14px; flex:none; stroke:currentColor; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round; transition:transform .18s ease; }
+.vy-primary:hover .vy-action-arrow, .vy-example-top a:hover .vy-action-arrow { transform:translateX(2px); }
 .vy-code { margin:0; overflow:auto; padding:22px; border:1px solid var(--vy-rule); border-radius:var(--vy-radius); background:var(--vy-panel); font:12px/1.9 var(--vp-font-family-mono); color:var(--vy-ink); }
 .vy-code .keyword { color:var(--vy-muted); }
 .vy-code .string { color:var(--vy-green-700); }
 .vy-topic-index { margin-top:64px; padding-top:30px; border-top:1px solid var(--vy-rule); }
 .vy-topic-index > p { margin:0 0 22px; color:var(--vy-muted); font-size:13px; }
 .vy-topics { display:grid; grid-template-columns:1fr 1fr; gap:0 32px; }
-.vy-topics a { display:grid; grid-template-columns:1fr auto; gap:7px 16px; padding:20px 0; border-top:1px solid var(--vy-rule); }
+.vy-topics a { display:grid; grid-template-columns:minmax(0,1fr) 16px; gap:7px 16px; padding:20px 0; border-top:1px solid var(--vy-rule); }
 .vy-topics strong { font-size:14px; font-weight:600; }
 .vy-topics p { grid-column:1; margin:0; font-size:12px; line-height:1.7; color:var(--vy-muted); }
-.vy-topics a > span { grid-column:2; grid-row:1 / 3; align-self:center; color:var(--vy-muted); }
+.vy-topic-arrow { grid-column:2; grid-row:1 / 3; align-self:center; width:14px; height:14px; stroke:currentColor; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round; color:var(--vy-muted); transition:transform .18s ease,color .18s ease; }
 .vy-topics a:hover strong { color:var(--vy-green-600); }
+.vy-topics a:hover .vy-topic-arrow { color:var(--vy-green-600); transform:translateX(2px); }
+.vy-doc-footer a { display:inline-flex; align-items:center; gap:6px; }
+.vy-external-link { width:13px; height:13px; flex:none; stroke:currentColor; stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round; opacity:.68; }
 .vy-doc-footer { display:flex; justify-content:space-between; gap:24px; margin-top:48px; padding:22px 0; border-top:1px solid var(--vy-rule); color:var(--vy-muted); font-size:11px; line-height:1.8; }
 @media (max-width:1100px) { .vy-welcome,.vy-workspace { grid-template-columns:minmax(0,1fr); gap:28px; } .vy-context { display:none; } .vy-steps { display:grid; grid-template-columns:1fr 1fr; gap:0 24px; } }
 @media (max-width:760px) { .VPPage:has(.vyline-home) { padding:32px 24px 0; } .vy-welcome h1 { font-size:40px; } .vy-topics { grid-template-columns:1fr; } .vy-search-trigger { min-width:36px !important; } .vy-search-trigger > span:not(.vy-search-glass),.vy-search-trigger kbd { display:none; } .VPDoc .vp-doc table { display:block; overflow:auto; } .VPDoc .vp-doc h1 { font-size:30px; } .vy-doc-footer { flex-direction:column; gap:8px; } }
@@ -136,6 +137,7 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
  .VPNavBarTitle .title::after { margin-left:2px; padding-left:10px; font-size:12px; }
  .vy-search { margin:0 0 0 auto; flex:none; }
  .vy-search-trigger { width:44px; min-width:44px !important; min-height:44px; justify-content:center; padding:0; }
+ .vy-search-trigger .vy-search-glass { margin-left:-2px; }
  .vy-search-trigger > span:not(.vy-search-glass), .vy-search-trigger kbd { display:none; }
  .VPNavBarHamburger { flex-shrink:0; }
  .VPPage:has(.vyline-home) { padding:28px 20px 0; }
@@ -166,8 +168,8 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
  .VPDoc .vp-doc .header-anchor:focus-visible { opacity:1; }
  .VPDoc .vp-doc :not(pre) > code, .VPDoc .vp-doc p a { overflow-wrap:anywhere; }
  .VPDoc .vp-doc div[class*="language-"] { margin-inline:0; max-width:100%; }
- .VPDoc .vp-doc div[class*="language-"] pre { padding:16px; -webkit-overflow-scrolling:touch; }
- .VPDoc .vp-doc div[class*="language-"] code { padding:0; font-size:12px; line-height:1.8; }
+ .VPDoc .vp-doc div[class*="language-"] pre { overflow-wrap:anywhere; padding:16px; white-space:pre-wrap; -webkit-overflow-scrolling:touch; }
+ .VPDoc .vp-doc div[class*="language-"] code { overflow-wrap:anywhere; padding:0; font-size:12px; line-height:1.8; white-space:pre-wrap; }
  .VPDoc .vp-doc div[class*="language-"] button.copy { width:44px; height:44px; top:4px; right:4px; }
  .VPDoc .vp-doc table { display:block; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
  .VPDoc .vp-doc th, .VPDoc .vp-doc td { min-width:112px; padding:10px 12px; }

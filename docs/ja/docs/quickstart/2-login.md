@@ -1,8 +1,11 @@
 # 手順2：QR コードでログインする {#step-2-log-in-with-qr}
 
-アプリケーションに LINE のパスワードを持たせずに済むよう、QR ログインを使用します。
-ライブラリはログイン用 URL と PIN を返します。
-URL を QR コードとして表示する方法は、ホストアプリケーションが決めます。
+この手順は、Vylinejs のインストール後に行います。
+QR ログインを使うと、LINE のパスワードをライブラリに渡さずにログインできます。
+
+1. `loginWithQR()` がログインを開始します。
+2. `onReceiveQRUrl` で受け取った URL を、アプリ内で QR コードとして表示します。Vylinejs は URL を返しますが、QR 画像の生成や表示は行いません。
+3. `onPincodeRequest` で PIN を利用者に表示し、LINE での確認を促します。確認が終わると、関数からログイン済みのクライアントが返ります。
 
 ```ts
 import { loginWithQR } from "@nezumi0627/vylinejs";
@@ -20,6 +23,9 @@ const client = await loginWithQR({
 
 console.log((await client.getMyProfile()).displayName);
 ```
+
+コールバック内の `console.log` は、アプリ側の画面表示に置き換える箇所です。
+最後の行はログイン完了後にプロフィールを取得し、認証済みクライアントが使えることを確認します。
 
 ログイン用 URL、PIN、認証トークン、保存済みセッションは公開しないでください。
 繰り返し実行できるローカルの例と、セッション復元の選択肢については、[認証ガイド](../auth)を参照してください。
