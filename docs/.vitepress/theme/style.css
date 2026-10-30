@@ -17,6 +17,14 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 .VPNavBarTitle .title::after { content:"Docs"; border-left:1px solid var(--vy-rule); margin-left:4px; padding-left:13px; color:var(--vy-muted); font-size:13px; font-weight:450; letter-spacing:0; }
 .VPNavBar .content-body { gap:12px; }
 .VPNavBarMenuLink { font-size:12px !important; }
+/* Keep navigation geometry identical when VitePress swaps locale labels. */
+.VPNavBarMenu .list > li > .VPNavBarMenuLink { box-sizing:border-box; width:100%; justify-content:center; white-space:nowrap; }
+.VPNavBarMenu .list > li:nth-child(1) { width:64px; flex:none; }
+.VPNavBarMenu .list > li:nth-child(2) { width:100px; flex:none; }
+.VPNavBarMenu .list > li:nth-child(3) { width:76px; flex:none; }
+.VPNavBarMenu .list > li:nth-child(4) { width:104px; flex:none; }
+.VPNavBarMenu .list > li:nth-child(5) { width:72px; flex:none; }
+.VPNavBarMenu .list > li:nth-child(6) { width:84px; flex:none; }
 .VPNavBarSearch { display:none !important; }
 .VPSidebar { background:var(--vy-paper) !important; border-right:1px solid var(--vy-rule); scrollbar-width:thin; scrollbar-color:var(--vy-rule) transparent; padding-right:22px !important; }
 .VPSidebar .curtain { background:var(--vy-paper) !important; }
@@ -27,7 +35,7 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 .VPSidebarItem.level-1 { margin:3px 0; }
 .VPSidebarItem.level-1 .item { padding:0; }
 .VPSidebarItem.level-1 .link { padding:7px 10px; border-radius:var(--vy-radius); }
-.VPSidebarItem.level-1 .text { font-size:12px; line-height:20px; font-weight:400; color:var(--vy-muted); }
+.VPSidebarItem.level-1 .text { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; line-height:20px; font-weight:400; color:var(--vy-muted); }
 .VPSidebarItem.level-1.is-active > .item .link { background:var(--vy-green-50); }
 .VPSidebarItem.level-1.is-active > .item .text { color:var(--vy-green-700); font-weight:600; }
 .VPSidebarItem.level-1 .link:hover { background:var(--vy-panel); }

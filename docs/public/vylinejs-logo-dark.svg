@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 640" role="img" aria-labelledby="title">
+	<title id="title">Vylinejs</title>
+	<rect x="8" y="8" width="496" height="624" rx="102" fill="#0b0c0e"/>
+	<path d="M105 104h64c12 0 21 5 28 16l81 119c9 13 6 28-7 37l-24 16c-13 9-27 5-36-8L101 128c-9-12-6-24 4-24Z" fill="#fff"/>
+	<path d="M294 104h103c15 0 22 11 13 24l-49 67c-8 11-23 11-32 0l-50-67c-9-13-1-24 15-24Z" fill="#fff"/>
+	<text x="256" y="410" text-anchor="middle" fill="#fff" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="68" font-weight="650" letter-spacing="-2">Vylinejs</text>
+</svg>

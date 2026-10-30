@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/nezumi0627/Vylinejs/main/docs/public/vylinejs-logo-light.svg" alt="Vylinejs" width="180"></p>
+
 # Vylinejs
 
 `@nezumi0627/vylinejs` is an unofficial LINE client library based on the

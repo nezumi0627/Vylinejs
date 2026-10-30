@@ -18,6 +18,11 @@ const config = defineConfig({
 	themeConfig: {
 		// https://vitepress.dev/reference/default-theme-config
 		siteTitle: "Vylinejs",
+		logo: {
+			light: "/vylinejs-icon-light.svg",
+			dark: "/vylinejs-icon-dark.svg",
+			alt: "Vylinejs",
+		},
 
 		nav: [
 			{ text: "Home", link: "/" },
@@ -102,12 +107,16 @@ const config = defineConfig({
 		],
 	},
 	head: [
-		["link", { rel: "icon shortcut", href: `${base}favicon.png` }],
-		["link", { rel: "apple-touch-icon", href: `${base}favicon.png` }],
+		["link", {
+			rel: "icon",
+			type: "image/svg+xml",
+			href: `${base}vylinejs-icon-dark.svg`,
+		}],
+		["link", { rel: "apple-touch-icon", href: `${base}apple-touch-icon.png` }],
 		["meta", { name: "og:title", content: "Vylinejs Documentation" }],
 		["meta", {
 			name: "og:image",
-			content: `${siteUrl}favicon.png`,
+			content: `${siteUrl}vylinejs-social-preview.png`,
 		}],
 		["meta", {
 			name: "og:description",
@@ -122,7 +131,7 @@ const config = defineConfig({
 		["meta", { name: "twitter:card", content: "summary_large_image" }],
 		["meta", {
 			name: "twitter:image",
-			content: `${siteUrl}favicon.png`,
+			content: `${siteUrl}vylinejs-social-preview.png`,
 		}],
 	],
 

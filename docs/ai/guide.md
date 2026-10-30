@@ -5,6 +5,9 @@ automated tools integrating `@nezumi0627/vylinejs`. Follow the steps in order,
 use only APIs shown in the linked Vylinejs docs or repository examples, and do
 not invent LINE protocol behavior.
 
+For a direct AI handoff, provide this entrypoint URL: <https://nezumi0627.github.io/Vylinejs/ai.txt>.
+It tells an assistant how to inspect a project, install the JSR package, and verify APIs against maintained sources.
+
 ## 1. Identify the runtime
 
 Vylinejs is a TypeScript library published on JSR. Supported installation

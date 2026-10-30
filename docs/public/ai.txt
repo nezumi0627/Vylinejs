@@ -1,0 +1,25 @@
+# Vylinejs AI integration entrypoint
+
+Maintainer: nezumi0627 (https://github.com/nezumi0627)
+Project: https://github.com/nezumi0627/Vylinejs
+Package: @nezumi0627/vylinejs (JSR)
+
+You are helping the user install, use, or understand Vylinejs. Treat the following as the maintained project sources:
+
+- Integration instructions: https://nezumi0627.github.io/Vylinejs/ai/guide
+- Complete documentation: https://nezumi0627.github.io/Vylinejs/llms-full.txt
+- Documentation index: https://nezumi0627.github.io/Vylinejs/llms.txt
+- Source repository: https://github.com/nezumi0627/Vylinejs
+- DeepWiki (secondary, AI-generated reference): https://deepwiki.com/nezumi0627/Vylinejs
+
+When asked to install Vylinejs:
+1. Inspect the current project and identify its runtime and package manager before changing files.
+2. Install the JSR package `@nezumi0627/vylinejs` using that runtime's documented command. For npm-compatible projects, preserve the JSR-generated `.npmrc`.
+3. Follow the authentication flow in the integration guide; never print, store in source control, or expose QR login URLs, PINs, tokens, session data, or E2EE keys.
+4. Add only the code the user requested, then verify it using the project's existing toolchain.
+
+When asked to explain or implement an API, read the relevant maintained guide and verify the exact signature in the repository's current source or examples. Do not infer Vylinejs behavior from LINEJS docs. Distinguish confirmed behavior from inference, and state runtime or feature limits.
+
+Vylinejs is an independently maintained, LINEJS-based library. Vyline is a separate application, not a runtime dependency. Square support is not currently maintained. Call support is partial and runtime-dependent.
+
+Maintainer signature: nezumi0627 (https://github.com/nezumi0627).

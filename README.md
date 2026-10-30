@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/public/vylinejs-logo-light.svg" alt="Vylinejs" width="180"></p>
+
 # Vylinejs
 
 Vylinejs is a downstream integration based on
