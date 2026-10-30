@@ -55,6 +55,29 @@ Deno.test("sendLiff forceIssue refreshes only the selected LIFF token", async ()
 	assertEquals(issued, ["app-a", "app-b", "app-a"]);
 });
 
+Deno.test("sendLiff shares an in-flight token issue for the same recipient and LIFF ID", async () => {
+	const service = new LiffService({
+		fetch: () => Promise.resolve(new Response("{}")),
+	} as never as BaseClient);
+	let issueCount = 0;
+	let releaseIssue!: (token: string) => void;
+	service.getLiffToken = () => {
+		issueCount++;
+		return new Promise((resolve) => releaseIssue = resolve);
+	};
+	const options = {
+		to: "u-recipient",
+		liffId: "app",
+		messages: [{ type: "text", text: "hello" } as const],
+	};
+	const first = service.sendLiff(options);
+	const second = service.sendLiff(options);
+	await Promise.resolve();
+	assertEquals(issueCount, 1);
+	releaseIssue("shared-token");
+	await Promise.all([first, second]);
+});
+
 Deno.test("sendLiff does not reuse a token after switching LINE accounts", async () => {
 	const client = {
 		profile: { mid: "u-account-a" },

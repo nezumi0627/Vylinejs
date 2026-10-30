@@ -25,6 +25,7 @@ export class LiffService implements BaseService {
 	errorName = "LiffServiceError";
 	liffId = "2006747340-AoraPvdD";
 	csrfRegExp = /<input type="hidden" name="__csrf" id="__csrf" value="(.*?)">/;
+	#liffTokenRequests = new Map<string, Promise<string>>();
 
 	client: BaseClient;
 
@@ -167,7 +168,6 @@ export class LiffService implements BaseService {
 		tryConsent?: boolean;
 		forceIssue?: boolean;
 	}): Promise<LooseType> {
-		let token: string;
 		const {
 			to,
 			messages,
@@ -183,15 +183,14 @@ export class LiffService implements BaseService {
 		validateLiffMessages(messages);
 		const cacheKey = JSON.stringify([this.client.profile?.mid, liffId, to]);
 		const cachedToken = this.liffTokenCache[cacheKey];
-		if (!cachedToken || forceIssue) {
-			token = await this.getLiffToken({
+		const token = cachedToken && !forceIssue
+			? cachedToken
+			: await this.issueLiffToken(cacheKey, {
 				chatMid: to,
 				liffId,
 				tryConsent,
 			});
-			this.cacheLiffToken(cacheKey, token);
-		} else {
-			token = cachedToken;
+		if (cachedToken && !forceIssue) {
 			this.cacheLiffToken(cacheKey, token);
 		}
 
@@ -223,6 +222,26 @@ export class LiffService implements BaseService {
 			);
 		}
 		return responseBody;
+	}
+
+	private async issueLiffToken(
+		cacheKey: string,
+		options: { chatMid: string; liffId: string; tryConsent: boolean },
+	): Promise<string> {
+		const pending = this.#liffTokenRequests.get(cacheKey);
+		if (pending) return await pending;
+
+		const request = this.getLiffToken(options);
+		this.#liffTokenRequests.set(cacheKey, request);
+		try {
+			const token = await request;
+			this.cacheLiffToken(cacheKey, token);
+			return token;
+		} finally {
+			if (this.#liffTokenRequests.get(cacheKey) === request) {
+				this.#liffTokenRequests.delete(cacheKey);
+			}
+		}
 	}
 
 	private cacheLiffToken(key: string, token: string): void {

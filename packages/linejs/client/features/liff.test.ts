@@ -107,3 +107,26 @@ Deno.test("liff.shareMessage forwards the selected LIFF ID", async () => {
 	await client.shareMessage("u123", text("hello"), { liffId: "other-id" });
 	assertEquals(sentOptions?.liffId, "other-id");
 });
+
+Deno.test("liff.sendLiff exposes direct sending and consent options", async () => {
+	let sentOptions: Record<string, unknown> | undefined;
+	const client = createLiffClient({
+		base: {
+			liff: {
+				liffId: "default-id",
+				sendLiff(options: Record<string, unknown>) {
+					sentOptions = options;
+					return Promise.resolve({});
+				},
+			},
+		},
+	} as never);
+
+	await client.sendLiff({
+		to: "u123",
+		messages: [text("hello")],
+		tryConsent: false,
+	});
+	assertEquals(sentOptions?.liffId, "default-id");
+	assertEquals(sentOptions?.tryConsent, false);
+});

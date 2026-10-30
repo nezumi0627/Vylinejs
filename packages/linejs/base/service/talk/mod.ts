@@ -25,6 +25,7 @@ export interface SendMessageOptions {
 	contentType?: LINETypes.ContentType;
 	contentMetadata?: Record<string, string>;
 	relatedMessageId?: string;
+	messageRelationType?: "FORWARD" | "AUTO_REPLY" | "SUBORDINATE" | "REPLY";
 	location?: LINETypes.Location;
 	chunks?: string[] | Buffer[];
 	e2ee?: boolean;
@@ -107,6 +108,7 @@ export class TalkService implements BaseService {
 			contentType,
 			contentMetadata,
 			relatedMessageId,
+			messageRelationType,
 			location,
 			e2ee,
 			chunks,
@@ -134,6 +136,7 @@ export class TalkService implements BaseService {
 				contentType,
 				contentMetadata: _contentMetadata,
 				relatedMessageId,
+				messageRelationType,
 				e2ee,
 				chunks,
 			};
@@ -157,7 +160,7 @@ export class TalkService implements BaseService {
 				relatedMessageId,
 				...relatedMessageId
 					? {
-						messageRelationType: "REPLY",
+						messageRelationType: messageRelationType ?? "REPLY",
 						relatedMessageServiceCode: "TALK",
 					}
 					: {},
