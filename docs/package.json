@@ -1,13 +1,25 @@
 {
-	"name": "linejs-docs",
+	"name": "vylinejs-docs",
 	"version": "0.0.0",
 	"scripts": {
-		"dev": "vitepress dev .",
-		"build": "vitepress build .",
+		"check:i18n": "node scripts/check-locales.mjs",
+		"dev": "node scripts/generate-search-index.mjs && node scripts/generate-ai-index.mjs && vitepress dev .",
+		"build": "node scripts/generate-search-index.mjs && node scripts/generate-ai-index.mjs && vitepress build .",
 		"serve": "vitepress serve ."
 	},
+	"dependencies": {
+		"@shikijs/transformers": "^4.5.0",
+		"mermaid": "11.17.2",
+		"minisearch": "^7.2.0",
+		"shiki": "^4.5.0"
+	},
 	"devDependencies": {
-		"vitepress": "^1.6.4",
+		"vite": "^8.3.5",
+		"vitepress": "^2.0.0-alpha.21",
 		"vue": "^3.5.44"
+	},
+	"overrides": {
+		"esbuild": "^0.25.12",
+		"katex": "^0.18.2"
 	}
 }

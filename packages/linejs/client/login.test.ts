@@ -1,6 +1,61 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { loginWithAuthToken } from "./login.ts";
+import { loginWithAuthToken, loginWithPassword, loginWithQR } from "./login.ts";
 import { MemoryStorage } from "../base/storage/mod.ts";
+import { Login } from "../base/login/mod.ts";
+
+Deno.test("public login helpers pass through protocol version choices", async () => {
+	const prototype = Login.prototype as unknown as Record<string, unknown>;
+	const originalPassword = prototype.withPassword;
+	const originalQr = prototype.withQrCode;
+	const originalReady = prototype.ready;
+	let passwordOptions: unknown;
+	let qrOptions: unknown;
+	prototype.withPassword = function (options: unknown) {
+		passwordOptions = options;
+		return Promise.resolve();
+	};
+	prototype.withQrCode = function (options: unknown) {
+		qrOptions = options;
+		return Promise.resolve();
+	};
+	prototype.ready = () => Promise.resolve();
+	try {
+		await loginWithPassword({
+			email: "user@example.com",
+			password: "password",
+			v3: false,
+			e2ee: false,
+			modelName: "Old PC",
+			onPincodeRequest() {},
+		}, { device: "ANDROID" });
+		await loginWithQR({
+			v3: false,
+			loginMode: "linejs",
+			systemName: "linejs-v2",
+			modelName: "evex-device",
+			onReceiveQRUrl() {},
+			onPincodeRequest() {},
+		}, { device: "ANDROID" });
+	} finally {
+		prototype.withPassword = originalPassword;
+		prototype.withQrCode = originalQr;
+		prototype.ready = originalReady;
+	}
+	assertEquals(passwordOptions, {
+		email: "user@example.com",
+		password: "password",
+		pincode: undefined,
+		v3: false,
+		e2ee: false,
+		modelName: "Old PC",
+	});
+	assertEquals(qrOptions, {
+		v3: false,
+		loginMode: "linejs",
+		systemName: "linejs-v2",
+		modelName: "evex-device",
+	});
+});
 
 Deno.test("loginWithAuthToken passes version and endpoint to BaseClient", async () => {
 	let seen: Request | undefined;

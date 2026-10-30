@@ -1,15 +1,17 @@
 # Calls
 
-linejs can place LINE 1:1 audio calls from JavaScript. The public API is split
+For focused workflows, start with [1:1 audio](./audio-call), [group calls](./group-call), or [video calls](./video-call). This page keeps the lower-level PLANET, signaling, and media reference.
+
+Vylinejs exposes LINE call-control and media helpers for JavaScript. The public API is split
 into two layers:
 
 - `client.call.*` wraps LINE's call control APIs, such as route acquisition and
   group-call URL management.
-- `@evex/linejs/call` contains the call media building blocks: PLANET
+- `@nezumi0627/vylinejs/call` contains the call media building blocks: PLANET
   signaling, SRTP, RTP, Opus, WAV/PCM helpers, and the transport-neutral
   `CallSession` wrapper.
 
-The Android 1:1 audio path implemented by linejs is:
+The Android 1:1 audio path covered by the current implementation is:
 
 ```txt
 Talk auth token
@@ -23,7 +25,11 @@ Talk auth token
 
 ## Start Here
 
-If you only want a bot that places a call and plays audio, start with the
+The example is protocol-specific. A passing synthetic test does not guarantee
+that a given account, device, or network can complete a live LINE call. Check
+the [call verification notes](../VYLINEJS_STABILITY.md) before relying on it.
+
+If you want an example that places a call and plays audio, start with the
 command example:
 
 ```sh
@@ -112,13 +118,13 @@ PLANET.
 Most applications only need these exports:
 
 ```ts
-import { loginWithAuthToken } from "@evex/linejs";
+import { loginWithAuthToken } from "@nezumi0627/vylinejs";
 import {
 	decodeWavSync,
 	opusCodecFactory,
 	PlanetTransport,
 	resampleLinear,
-} from "@evex/linejs/call";
+} from "@nezumi0627/vylinejs/call";
 ```
 
 Useful call APIs:
@@ -140,13 +146,13 @@ This is the explicit low-level flow. It is intentionally verbose so each
 protocol step is visible.
 
 ```ts
-import { loginWithAuthToken } from "@evex/linejs";
+import { loginWithAuthToken } from "@nezumi0627/vylinejs";
 import {
 	decodeWavSync,
 	opusCodecFactory,
 	PlanetTransport,
 	resampleLinear,
-} from "@evex/linejs/call";
+} from "@nezumi0627/vylinejs/call";
 
 const client = await loginWithAuthToken(Deno.env.get("LINE_AUTH_TOKEN")!, {
 	device: "ANDROID",
@@ -305,7 +311,7 @@ An outgoing 1:1 audio call has seven phases.
 
 `client.call.acquireRoute({ to, callType: "AUDIO" })` asks LINE for the route
 needed to start a call. Native Android includes a small `fromEnvInfo` map with
-a `devname` entry at this step. linejs sends a generic device name by default,
+a `devname` entry at this step. Vylinejs sends a generic device name by default,
 and you can override it when a primary-token session is sensitive to the exact
 device profile:
 
@@ -334,14 +340,14 @@ are deliberately replaying a route in a controlled diagnostic environment.
 opens a UDP socket, and prepares local crypto state. No ringing happens at this
 stage. It only makes the transport ready to send the first PLANET packet.
 
-During `connect()` linejs generates:
+During `connect()` Vylinejs generates:
 
 - an ephemeral P-256 keypair for PLANET transport encryption;
 - a bootstrap seed and direction label;
 - random transaction IDs, channel IDs, call UUIDs, and frame sequence values;
 - a local nonce that will be carried in PLANET message headers.
 
-The route's `commParam.mpkey` is decoded as the peer relay public key. linejs
+The route's `commParam.mpkey` is decoded as the peer relay public key. Vylinejs
 performs ECDH with that key and derives PLANET transport keys with the native
 two-stage HKDF chain.
 
@@ -365,11 +371,11 @@ such as the result code and keepalive interval.
 
 ### 4. Learn Remote Nonce and Keep the Relay Open
 
-The first server reply carries the relay's local nonce. linejs stores it as the
+The first server reply carries the relay's local nonce. Vylinejs stores it as the
 remote nonce and includes it in later PLANET headers. Without this transition,
 later control messages may decrypt but be rejected by the server state machine.
 
-After `setup_rsp`, linejs sends native-style pinhole probes and starts
+After `setup_rsp`, Vylinejs sends native-style pinhole probes and starts
 keepalives using the interval returned by the server. These packets keep the UDP
 path warm while the peer is ringing.
 
@@ -391,10 +397,10 @@ The answer result includes:
 | `connReq` | Decoded connection request. |
 | `peerAnswerOffer` | Decoded peer media answer when present. |
 | `peerOffer` | Alternate decoded peer offer shape when present. |
-| `connRspSent` | Whether linejs sent `conn_rsp`. |
+| `connRspSent` | Whether Vylinejs sent `conn_rsp`. |
 | `mediaReady` | Whether SRTP send/receive contexts and RTP target were configured. |
 
-With `autoConnRsp: true`, linejs sends `conn_rsp` and also replies to duplicate
+With `autoConnRsp: true`, Vylinejs sends `conn_rsp` and also replies to duplicate
 `conn_req` packets while the peer settles. This matters because real clients can
 repeat `conn_req` during answer negotiation.
 
@@ -445,7 +451,7 @@ UDP datagram
         Cassini call-control body
 ```
 
-linejs handles:
+Vylinejs handles:
 
 - native-compatible frame headers for bootstrap and regular packets;
 - AES-CTR encryption and HMAC authentication for PLANET control packets;
@@ -465,7 +471,7 @@ The main call-control messages are:
 | keepalive | caller -> relay | Maintain the PLANET session. |
 | `conn_req` | relay -> caller | Peer answered; carries media answer material and media endpoint fields. |
 | `conn_rsp` | caller -> relay | Acknowledge answer and complete media negotiation. |
-| `info_req` | relay -> caller | Miscellaneous control request. linejs answers with `info_rsp`. |
+| `info_req` | relay -> caller | Miscellaneous control request. Vylinejs answers with `info_rsp`. |
 | `rel_req` | caller -> relay | Release/end the call. |
 
 ## Keying Model
@@ -478,7 +484,7 @@ PLANET control packets are encrypted and authenticated before media starts.
 Transport key derivation uses:
 
 - the route's `commParam.mpkey`;
-- the local ephemeral P-256 keypair generated by linejs;
+- the local ephemeral P-256 keypair generated by Vylinejs;
 - a bootstrap seed and direction label;
 - a native-compatible two-stage HKDF chain.
 
@@ -489,7 +495,7 @@ RTP audio media.
 
 SRTP media keys are derived after the peer answers. The local SETUP offer
 contains media ECDH material, IDs, nonces, and stream material. The peer answer
-contains matching media material. linejs derives multiple candidate key
+contains matching media material. Vylinejs derives multiple candidate key
 orientations because native clients use direction-sensitive material ordering.
 
 `PlanetTransportOpts.mediaKeyMode` selects which candidate is used:
@@ -536,7 +542,7 @@ or nothing at all.
 
 ## Audio Pipeline
 
-LINE call media expects Opus frames in an RTP stream. linejs provides small
+LINE call media expects Opus frames in an RTP stream. Vylinejs provides small
 building blocks instead of hiding the whole pipeline:
 
 | Helper | Purpose |
@@ -564,7 +570,7 @@ input audio
 ```
 
 `decodeWavSync()` only supports uncompressed 16-bit PCM WAV. Convert other
-formats before passing them to linejs:
+formats before passing them to Vylinejs:
 
 ```sh
 ffmpeg -i input.mp3 -ac 1 -ar 48000 -sample_fmt s16 output.wav
@@ -714,7 +720,7 @@ material in public examples and issue reports.
 ## E2EE and Privacy Notes
 
 Talk message E2EE and call media security are separate systems. A Talk message
-that triggers `!call` may be E2EE-decrypted by linejs before your handler sees
+that triggers `!call` may be E2EE-decrypted by Vylinejs before your handler sees
 it, but the call itself uses PLANET transport crypto and SRTP media crypto.
 
 Do not derive call media keys from Talk message E2EE material. Do not publish:
@@ -835,7 +841,7 @@ The helper accepts the same prefixed 20 ms packets used by 1:1 examples. Supply
 one activity boolean per input frame when using CELT:
 
 ```ts
-import { packetizeNativeGroupOpusPairs } from "@evex/linejs/call";
+import { packetizeNativeGroupOpusPairs } from "@nezumi0627/vylinejs/call";
 
 const groupPackets = packetizeNativeGroupOpusPairs(oneToOneStylePackets, {
 	frameActivity, // boolean[] from your encoder or a PCM non-silence meter
@@ -894,5 +900,6 @@ the tested implementation.
 
 ## Need Help?
 
-If you run into call-related issues, please ask on the LINEJS Discord:
-[https://discord.gg/evex](https://discord.gg/evex).
+If you run into call-related issues, open a [Vylinejs issue](https://github.com/nezumi0627/Vylinejs/issues/new/choose)
+with runtime, device profile, network details, and a redacted reproduction.
+Do not attach auth tokens, call-route credentials, or private account data.

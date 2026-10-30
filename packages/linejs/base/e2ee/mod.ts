@@ -1,10 +1,10 @@
 import { sharedKey } from "curve25519-js";
 import crypto from "node:crypto";
 import { Buffer } from "node:buffer";
-import type { Location, Message } from "@evex/linejs-types";
+import type { Location, Message } from "vylinejs-types";
 import nacl from "tweetnacl";
 import { InternalError } from "../core/utils/error.ts";
-import * as LINETypes from "@evex/linejs-types";
+import * as LINETypes from "vylinejs-types";
 import type { BaseClient } from "../core/mod.ts";
 import { persistMany } from "../storage/base.ts";
 import { ContentType } from "../thrift/readwrite/struct.ts";
@@ -45,6 +45,138 @@ export class E2EE {
 		}
 	}
 
+	/** Import key material from a parsed Vyline Desktop or SBC key bundle.
+	 *  Private keys are accepted only when their public key can be derived and,
+	 *  for keys registered on this account, matches LINE's public key. */
+	public async importE2EEKeyBundle(dump: unknown): Promise<{
+		imported: number;
+		skipped: number;
+		keyIds: number[];
+		identity: E2EEIdentityStatus;
+	}> {
+		const mid = this.client.profile?.mid;
+		if (!mid) {
+			throw new InternalError(
+				"NotAuthorized",
+				"E2EE key bundles can only be imported after login",
+			);
+		}
+		if (!dump || typeof dump !== "object") {
+			throw new TypeError("E2EE key bundle must be an object or key array");
+		}
+		const bundle = Array.isArray(dump)
+			? { keys: dump }
+			: dump as Record<string, unknown>;
+		if (typeof bundle.mid === "string" && bundle.mid !== mid) {
+			throw new InternalError(
+				"E2EEAccountMismatch",
+				`E2EE key bundle belongs to ${bundle.mid}, not ${mid}`,
+			);
+		}
+		const rawKeys = Array.isArray(bundle.keys)
+			? bundle.keys
+			: Array.isArray(bundle.e2eeKeys)
+			? bundle.e2eeKeys
+			: null;
+		if (!rawKeys) {
+			throw new TypeError("E2EE key bundle must contain a keys array");
+		}
+
+		const serverKeys = await this.client.talk.getE2EEPublicKeys();
+		const serverById = new Map<number, Buffer>();
+		const toBytes = (value: string | Uint8Array): Buffer => {
+			if (typeof value !== "string") return Buffer.from(value);
+			const decoded = Buffer.from(value, "base64");
+			return decoded.length === 32 ? decoded : Buffer.from(value);
+		};
+		for (const serverKey of serverKeys) {
+			const keyId = Number(serverKey.keyId);
+			if (Number.isSafeInteger(keyId) && serverKey.keyData) {
+				serverById.set(keyId, toBytes(serverKey.keyData));
+			}
+		}
+
+		const updates: Record<string, string> = {};
+		const importedIds: number[] = [];
+		let skipped = 0;
+		const seen = new Set<number>();
+		for (const entry of rawKeys) {
+			if (!entry || typeof entry !== "object") {
+				skipped++;
+				continue;
+			}
+			const raw = entry as Record<string, unknown>;
+			const sbc = raw.e2eeKey && typeof raw.e2eeKey === "object"
+				? raw.e2eeKey as Record<string, unknown>
+				: undefined;
+			const keyId = Number(raw.keyId ?? raw.keyID);
+			const rawPrivKey = raw.privKey ?? sbc?.encoded_private_key;
+			const rawPubKey = raw.pubKey ?? sbc?.encoded_public_key;
+			if (
+				!Number.isSafeInteger(keyId) || keyId < 0 || seen.has(keyId) ||
+				typeof rawPrivKey !== "string"
+			) {
+				skipped++;
+				continue;
+			}
+			const privKey = Buffer.from(rawPrivKey, "base64");
+			if (privKey.length !== 32) {
+				skipped++;
+				continue;
+			}
+			const derivedPubKey = Buffer.from(
+				nacl.scalarMult.base(new Uint8Array(privKey)),
+			);
+			let pubKey: Buffer = derivedPubKey;
+			if (typeof rawPubKey === "string") {
+				const candidate = Buffer.from(rawPubKey, "base64");
+				if (
+					candidate.length === 32 &&
+					this.verifyE2EEKeyPair(privKey, candidate)
+				) {
+					pubKey = candidate;
+				}
+			}
+			const serverPubKey = serverById.get(keyId);
+			if (
+				serverPubKey &&
+				!this.verifyE2EEKeyPair(privKey, serverPubKey)
+			) {
+				skipped++;
+				continue;
+			}
+			seen.add(keyId);
+			if (serverPubKey) pubKey = serverPubKey;
+			const rawVersion = Number(raw.e2eeVersion ?? sbc?.version ?? 1);
+			const normalized = {
+				keyId,
+				privKey: privKey.toString("base64"),
+				pubKey: pubKey.toString("base64"),
+				e2eeVersion: Number.isFinite(rawVersion) ? rawVersion : 1,
+			};
+			updates[`e2eeKeys:${keyId}`] = JSON.stringify(normalized);
+			updates[`e2eePublicKeys:${mid}:${keyId}`] = normalized.pubKey;
+			importedIds.push(keyId);
+		}
+
+		await persistMany(this.client.storage, updates);
+		const identity = await this.reconcileStoredE2EEIdentityWithKeys(
+			mid,
+			serverKeys,
+		);
+		this.e2eeLog("importE2EEKeyBundle", {
+			imported: importedIds.length,
+			skipped,
+			keyIds: importedIds,
+		});
+		return {
+			imported: importedIds.length,
+			skipped,
+			keyIds: importedIds,
+			identity,
+		};
+	}
+
 	/**
 	 * Reconcile imported or stored private keys with the server's registered
 	 * public keys. Keeps every verified historical key and selects the newest
@@ -55,14 +187,26 @@ export class E2EE {
 	): Promise<E2EEIdentityStatus> {
 		if (!mid) throw new InternalError("Invalid mid", "mid is required");
 		const serverKeys = await this.client.talk.getE2EEPublicKeys();
+		return await this.reconcileStoredE2EEIdentityWithKeys(mid, serverKeys);
+	}
+
+	private async reconcileStoredE2EEIdentityWithKeys(
+		mid: string,
+		serverKeys: Awaited<ReturnType<BaseClient["talk"]["getE2EEPublicKeys"]>>,
+	): Promise<E2EEIdentityStatus> {
+		const toPublicKeyBytes = (value: Uint8Array | string): Buffer => {
+			if (typeof value !== "string") return Buffer.from(value);
+			const decoded = Buffer.from(value, "base64");
+			return decoded.length === 32 ? decoded : Buffer.from(value);
+		};
 		const registered = serverKeys.flatMap((key) => {
 			const rawKeyId = key.keyId ??
 				(key as unknown as { "2"?: number | string })[2];
 			const rawPubKey = key.keyData ??
-				(key as unknown as { "4"?: Uint8Array })[4];
+				(key as unknown as { "4"?: Uint8Array | string })[4];
 			const keyId = Number(rawKeyId);
 			if (!Number.isSafeInteger(keyId) || !rawPubKey) return [];
-			return [{ keyId, pubKey: Buffer.from(rawPubKey) }];
+			return [{ keyId, pubKey: toPublicKeyBytes(rawPubKey) }];
 		});
 		const serverLatestKeyId = registered.reduce<number | null>(
 			(latest, key) =>
@@ -253,9 +397,37 @@ export class E2EE {
 			let key: string | undefined = undefined;
 			if (keyId !== undefined) {
 				key = (await this.client.storage.get(cacheKey)) as string;
+				if (key && Buffer.from(key, "base64").length !== 32) {
+					key = undefined;
+					await this.client.storage.delete(cacheKey);
+				}
 			}
 			let receiverKeyData: LINETypes.E2EENegotiationResult;
 			if (!key) {
+				if (keyId !== undefined) {
+					const historicalKey = await this.client.talk.getE2EEPublicKey({
+						mid,
+						keyVersion: 1,
+						keyId: Number(keyId),
+					});
+					if (Number(historicalKey.keyId) !== Number(keyId)) {
+						throw new InternalError(
+							"No E2EEKey",
+							`E2EE key id ${keyId} not found on ${mid}, key id should be ${historicalKey.keyId}`,
+						);
+					}
+					key = typeof historicalKey.keyData === "string"
+						? historicalKey.keyData
+						: Buffer.from(historicalKey.keyData).toString("base64");
+					if (Buffer.from(key, "base64").length !== 32) {
+						throw new InternalError(
+							"Invalid E2EEKey",
+							`E2EE public key ${keyId} for ${mid} is not 32 bytes`,
+						);
+					}
+					await this.client.storage.set(cacheKey, key);
+					return Buffer.from(key, "base64");
+				}
 				receiverKeyData = await this.client.talk.negotiateE2EEPublicKey(
 					{ mid },
 				);
@@ -308,30 +480,19 @@ export class E2EE {
 				// it was encrypted under. Asking for the last key here decrypts
 				// every older message with the wrong key and the GCM tag check
 				// fails ("unable to authenticate data") for the whole group.
-				try {
-					e2eeGroupSharedKey = await this.client.talk
-						.getE2EEGroupSharedKey({
-							keyVersion: 2,
-							chatMid: mid,
-							groupKeyId: requestedKeyId,
-						});
-				} catch (error) {
-					if (
-						error instanceof InternalError &&
-						error.data.code == "NOT_FOUND"
-					) {
-						// The server no longer serves that generation; the last
-						// key is still the best guess, as it was before.
-						this.e2eeLog(
-							"getE2EELocalPublicKeyGroupKeyIdNotFound",
-							mid,
-						);
-					} else {
-						throw error;
-					}
+				e2eeGroupSharedKey = await this.client.talk
+					.getE2EEGroupSharedKey({
+						keyVersion: 2,
+						chatMid: mid,
+						groupKeyId: requestedKeyId,
+					});
+				if (Number(e2eeGroupSharedKey.groupKeyId) !== requestedKeyId) {
+					throw new InternalError(
+						"No E2EEKey",
+						`group key id ${requestedKeyId} not found on ${mid}`,
+					);
 				}
-			}
-			if (!e2eeGroupSharedKey) {
+			} else {
 				try {
 					e2eeGroupSharedKey = await this.client.talk
 						.getLastE2EEGroupSharedKey({
@@ -1350,8 +1511,10 @@ export class E2EE {
 		return JSON.parse(decrypted.toString());
 	}
 
-	private e2eeLog(type: string, message: LooseType) {
-		this.client.log("e2ee", { type, message });
+	private e2eeLog(type: string, _message: LooseType) {
+		// E2EE log payloads can contain keys, ciphertext, or decrypted content.
+		// Keep the operation name for diagnostics without exposing those values.
+		this.client.log("e2ee", { type });
 	}
 
 	public createSqrSecret(

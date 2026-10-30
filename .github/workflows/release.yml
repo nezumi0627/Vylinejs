@@ -1,19 +1,78 @@
-name: Vylinejs release verification
+name: Release
 
 on:
   push:
     tags:
       - "vylinejs-v*"
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    name: Verify release source
+    name: Release checks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: denoland/setup-deno@v2
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - run: deno test -A
-      - run: deno check packages/linejs/base/mod.ts packages/linejs/client/mod.ts packages/agent/mod.ts
-      - run: deno task docs:build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#vylinejs-v}"
+          package_version="$(deno eval "JSON.parse(Deno.readTextFileSync('packages/linejs/deno.json')).version")"
+          if [[ "$package_version" != "$tag_version" ]]; then
+            echo "Tag $tag_version does not match package version $package_version" >&2
+            exit 1
+          fi
+
+      - name: Check package types
+        run: deno check packages/linejs/client/mod.ts packages/linejs/base/mod.ts packages/agent/mod.ts
+
+      - name: Run Deno tests
+        run: deno test -A
+
+      - name: Check Node transport
+        run: node scripts/test_node_transport.mts
+
+      - name: Install documentation dependencies
+        run: npm ci --prefix docs
+
+      - name: Check documentation translations
+        run: npm run check:i18n --prefix docs
+
+      - name: Build documentation
+        run: npm run build --prefix docs
+
+      - name: Validate JSR package
+        run: deno publish --dry-run
+
+  publish:
+    name: Publish to JSR
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Publish package
+        run: deno publish

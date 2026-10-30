@@ -1,4 +1,4 @@
-import { BaseClient } from "@evex/linejs/base";
+import { BaseClient } from "@nezumi0627/vylinejs/base";
 
 const client = new BaseClient({
 	device: "ANDROIDSECONDARY",

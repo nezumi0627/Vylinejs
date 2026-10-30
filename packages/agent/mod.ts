@@ -1,5 +1,5 @@
 /**
- * `@evex/linejs-agent` — a faithful client for LINE Android's **"Agent I"**
+ * Repository-only source for a client for LINE Android's **"Agent I"**
  * (エージェント アイ) feature, the in-app AI agent surfaced from the chat-tab
  * search bar.
  *
@@ -34,7 +34,7 @@
  * in the EdamAme-x/android-reverse workspace.
  *
  * @example
- *   import { AgentIClient } from "@evex/linejs-agent";
+ *   import { AgentIClient } from "./packages/agent/mod.ts";
  *   const agent = new AgentIClient({
  *     cookie: cookies, // see #152 — Yahoo anonymous cookies usually suffice
  *     lineVersion: "26.6.0",

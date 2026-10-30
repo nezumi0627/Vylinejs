@@ -5,6 +5,7 @@
 
 import type { FetchLike } from "../base/mod.ts";
 import type { Device } from "../base/mod.ts";
+import type { LoginMode } from "../base/login/identity.ts";
 import { BaseClient, InternalError } from "../base/mod.ts";
 import type { BaseStorage } from "../base/storage/mod.ts";
 import {
@@ -12,6 +13,8 @@ import {
 	parseAuthTokenInput,
 } from "../base/request/auth_token.ts";
 import { Client } from "./client.ts";
+
+export type { LoginMode } from "../base/login/identity.ts";
 
 export interface InitOptions {
 	/**
@@ -62,6 +65,12 @@ const createBaseClient = (init: InitOptions) =>
 	});
 
 export interface WithQROptions {
+	/** Select the QR login protocol version; defaults to the device-supported version. */
+	v3?: boolean;
+	/** `vyline` uses the host identity; `linejs` keeps the historical QR identity. */
+	loginMode?: LoginMode;
+	systemName?: string;
+	modelName?: string;
 	onReceiveQRUrl(url: string): Promise<void> | void;
 	onPincodeRequest(pin: string): void | Promise<void>;
 }
@@ -72,7 +81,12 @@ export const loginWithQR = async (
 	const base = createBaseClient(init);
 	base.on("qrcall", opts.onReceiveQRUrl);
 	base.on("pincall", opts.onPincodeRequest);
-	await base.loginProcess.withQrCode({});
+	await base.loginProcess.withQrCode({
+		v3: opts.v3,
+		loginMode: opts.loginMode,
+		systemName: opts.systemName,
+		modelName: opts.modelName,
+	});
 	await base.loginProcess.ready();
 	return new Client(base);
 };
@@ -82,6 +96,12 @@ export interface WithPasswordOptions {
 	password: string;
 	/** Random six-digit PIN by default. */
 	pincode?: string;
+	/** Select the password login protocol version; defaults to the device-supported version. */
+	v3?: boolean;
+	/** Use the legacy E2EE password handshake when v3 login is disabled. */
+	e2ee?: boolean;
+	/** Optional model name sent during password login. */
+	modelName?: string;
 
 	onPincodeRequest(pin: string): void | Promise<void>;
 }
@@ -95,6 +115,9 @@ export const loginWithPassword = async (
 		email: opts.email,
 		password: opts.password,
 		pincode: opts.pincode,
+		v3: opts.v3,
+		e2ee: opts.e2ee,
+		modelName: opts.modelName,
 	});
 	await base.loginProcess.ready();
 	return new Client(base);

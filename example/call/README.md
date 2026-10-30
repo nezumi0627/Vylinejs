@@ -78,7 +78,7 @@ frames. The example deliberately leaves hardware access to the application,
 since microphone and speaker APIs differ by runtime.
 
 ```ts
-import { opusCodecFactory, PlanetTransport } from "@evex/linejs/call";
+import { opusCodecFactory, PlanetTransport } from "@nezumi0627/vylinejs/call";
 import { bridgePcmDevices } from "./pcm_device_adapters.ts";
 
 const localMid = client.base.profile?.mid;

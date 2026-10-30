@@ -4,7 +4,7 @@ import {
 	type NestedArray,
 	type ProtocolKey,
 } from "../../thrift/mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import { InternalError } from "../../core/utils/error.ts";
 import type { BaseClient } from "../../core/mod.ts";
 import type { BaseService } from "../types.ts";
@@ -25,6 +25,7 @@ export class LiffService implements BaseService {
 	errorName = "LiffServiceError";
 	liffId = "2006747340-AoraPvdD";
 	csrfRegExp = /<input type="hidden" name="__csrf" id="__csrf" value="(.*?)">/;
+	#liffTokenRequests = new Map<string, Promise<string>>();
 
 	client: BaseClient;
 
@@ -167,7 +168,6 @@ export class LiffService implements BaseService {
 		tryConsent?: boolean;
 		forceIssue?: boolean;
 	}): Promise<LooseType> {
-		let token: string;
 		const {
 			to,
 			messages,
@@ -183,15 +183,14 @@ export class LiffService implements BaseService {
 		validateLiffMessages(messages);
 		const cacheKey = JSON.stringify([this.client.profile?.mid, liffId, to]);
 		const cachedToken = this.liffTokenCache[cacheKey];
-		if (!cachedToken || forceIssue) {
-			token = await this.getLiffToken({
+		const token = cachedToken && !forceIssue
+			? cachedToken
+			: await this.issueLiffToken(cacheKey, {
 				chatMid: to,
 				liffId,
 				tryConsent,
 			});
-			this.cacheLiffToken(cacheKey, token);
-		} else {
-			token = cachedToken;
+		if (cachedToken && !forceIssue) {
 			this.cacheLiffToken(cacheKey, token);
 		}
 
@@ -216,6 +215,9 @@ export class LiffService implements BaseService {
 
 		const responseBody = await response.json();
 		if (!response.ok) {
+			if (response.status === 401) {
+				delete this.liffTokenCache[cacheKey];
+			}
 			throw new InternalError(
 				this.errorName,
 				`Failed to send Liff message: ${response.statusText}`,
@@ -223,6 +225,26 @@ export class LiffService implements BaseService {
 			);
 		}
 		return responseBody;
+	}
+
+	private async issueLiffToken(
+		cacheKey: string,
+		options: { chatMid: string; liffId: string; tryConsent: boolean },
+	): Promise<string> {
+		const pending = this.#liffTokenRequests.get(cacheKey);
+		if (pending) return await pending;
+
+		const request = this.getLiffToken(options);
+		this.#liffTokenRequests.set(cacheKey, request);
+		try {
+			const token = await request;
+			this.cacheLiffToken(cacheKey, token);
+			return token;
+		} finally {
+			if (this.#liffTokenRequests.get(cacheKey) === request) {
+				this.#liffTokenRequests.delete(cacheKey);
+			}
+		}
 	}
 
 	private cacheLiffToken(key: string, token: string): void {

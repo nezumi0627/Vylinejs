@@ -3,8 +3,8 @@
  * @experimental
  * for talk
  */
-import type * as LINETypes from "@evex/linejs-types";
-import { parseEnum } from "@evex/linejs-types/thrift";
+import type * as LINETypes from "@nezumi0627/vylinejs/types";
+import { parseEnum } from "@nezumi0627/vylinejs/types/thrift";
 import type { BaseClient } from "../core/mod.ts";
 import type { Buffer } from "node:buffer";
 import { TypedEventEmitter } from "../core/typed-event-emitter/index.ts";

@@ -132,20 +132,16 @@ throughput claims are made for them.
 
 ## Upstream issue status
 
-- [LINEJS #198](https://github.com/evex-dev/linejs/issues/198): the reply
-  transaction and remote-release changes are in upstream
-  [PR #241](https://github.com/evex-dev/linejs/pull/241), merged 2026-10-10,
-  and included in this fork's base. Synthetic UDP/SRTP regressions pass. The
-  reported 60-second live result used an experimental JavaScript vendor; a
-  separate live phone call using the upstream TypeScript implementation has
-  not been confirmed, so the issue remains open.
-- [LINEJS #211](https://github.com/evex-dev/linejs/issues/211): upstream
-  [PR #236](https://github.com/evex-dev/linejs/pull/236), merged 2026-09-06,
-  includes generation-aware group-key lookup and the multi-entry E2EE login
-  keychain repair. The regression cases pass locally, but the original
-  reporter's account remains unverified. Preserve historical key material;
-  do not force key registration or clear storage.
-- These are the only open LINEJS issues in the 2026-10-29 check. Open upstream
-  pull requests: none. The unresolved account/device confirmations require
-  access to the affected account or a real phone pair; synthetic tests cannot
-  establish those results.
+- [LINEJS #198](https://github.com/evex-dev/linejs/issues/198): reply
+  transaction handling and remote-release behavior have local synthetic
+  UDP/SRTP regression coverage. The reported 60-second live result used an
+  experimental JavaScript vendor; a separate live phone call using the
+  TypeScript implementation has not been confirmed, so the issue remains open.
+- [LINEJS #211](https://github.com/evex-dev/linejs/issues/211): generation-aware
+  group-key lookup and multi-entry E2EE key handling are present in the current
+  baseline. Regression cases pass locally, but the original reporter's account
+  remains unverified. Preserve historical key material; do not force key
+  registration or clear storage.
+- The last issue review recorded here was 2026-10-29. Account and device
+  confirmations require access to the affected account or a real phone pair;
+  synthetic tests cannot establish those results.

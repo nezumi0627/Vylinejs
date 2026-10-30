@@ -5,7 +5,7 @@ import {
 	type MessageReactionType,
 	type SquareEvent,
 	type SquareMessage as Message,
-} from "@evex/linejs-types";
+} from "vylinejs-types";
 import type { Client } from "../../client.ts";
 import type {
 	EmojiMeta,

@@ -1,3 +1,8 @@
+/**
+ * Low-level Thrift encoding, decoding, and LINE protocol-name helpers.
+ * Prefer the high-level Client API for ordinary application code.
+ * @module
+ */
 export {
 	type NestedArray,
 	type ParsedThrift,

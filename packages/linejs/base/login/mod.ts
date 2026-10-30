@@ -2,12 +2,17 @@ import { getRSACrypto } from "./rsa-verify.ts";
 import { EMAIL_REGEX, PASSWORD_REGEX } from "./regex.ts";
 import { type Device, isV3Support } from "../core/utils/devices.ts";
 import { InternalError } from "../core/mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import { Buffer } from "node:buffer";
 import { LINEStruct } from "../thrift/mod.ts";
 import type { BaseClient } from "../core/mod.ts";
 import type { LooseType } from "@evex/loose-types";
 import { randomInt } from "node:crypto";
+import {
+	type LoginIdentity,
+	type LoginMode,
+	resolveLoginIdentity,
+} from "./identity.ts";
 import {
 	type AuthTokenInput,
 	parseAuthTokenInput,
@@ -58,6 +63,8 @@ export interface PasswordLoginOption {
 	 * @default true
 	 */
 	e2ee?: boolean;
+	/** Optional model name sent during password login. */
+	modelName?: string;
 	qr?: undefined;
 
 	authToken?: undefined;
@@ -71,6 +78,10 @@ export interface QrCodeLoginOption {
 	 * use v3 login or not.
 	 */
 	v3?: boolean;
+	/** Use Vyline's host identity, or `linejs` to keep its historical identity. */
+	loginMode?: LoginMode;
+	systemName?: string;
+	modelName?: string;
 }
 
 export class Login {
@@ -161,7 +172,7 @@ export class Login {
 		if (!options) {
 			await this.withQrCode();
 		} else if (options.qr) {
-			await this.withQrCode({ v3: options.v3 });
+			await this.withQrCode(options);
 		} else if (options.authToken) {
 			const credential = parseAuthTokenInput(options.authToken);
 			await this.client.auth.saveAuthTokenCredential(credential);
@@ -177,18 +188,19 @@ export class Login {
 	 * @param options.v3 use v3 login or not.
 	 */
 	async withQrCode(options?: QrCodeLoginOption): Promise<void> {
+		const identity = resolveLoginIdentity(options?.loginMode, options);
 		let authToken: string;
 		if (
 			typeof options === "undefined" || typeof options.v3 === "undefined"
 		) {
 			if (isV3Support(this.client.device)) {
-				authToken = await this.requestSQR2();
+				authToken = await this.requestSQR2(identity);
 			} else {
 				authToken = await this.requestSQR();
 			}
 		} else {
 			if (options.v3) {
-				authToken = await this.requestSQR2();
+				authToken = await this.requestSQR2(identity);
 			} else {
 				authToken = await this.requestSQR();
 			}
@@ -238,7 +250,9 @@ export class Login {
 		);
 	}
 
-	public async requestSQR2(): Promise<string> {
+	public async requestSQR2(
+		identity: LoginIdentity = resolveLoginIdentity(),
+	): Promise<string> {
 		const { 1: sqr } = await this.createSession();
 		const forSecure = await this.createQrCodeForSecure(sqr);
 		// Response shape per `oc4.i` (CreateQrCodeForSecureResponse):
@@ -280,7 +294,12 @@ export class Login {
 					longPollingIntervalSec,
 				);
 			}
-			const response = await this.qrCodeLoginV2ForSecure(sqr, nonce);
+			const response = await this.qrCodeLoginV2ForSecure(
+				sqr,
+				nonce,
+				identity.modelName,
+				identity.systemName,
+			);
 			// Response shape per `oc4.q` (QrCodeLoginV2Response — reused
 			// by both V2 and V2ForSecure):
 			//   1: certificate, 2: accessTokenV2 (legacy str),
@@ -335,12 +354,14 @@ export class Login {
 				options.email,
 				options.password,
 				options.pincode,
+				options.modelName,
 			)
 			: await this.requestEmailLogin(
 				options.email,
 				options.password,
 				options.pincode,
 				options.e2ee,
+				options.modelName,
 			);
 		if (!useV3) {
 			await this.client.auth.clearRefreshState();
@@ -368,6 +389,7 @@ export class Login {
 		password: string,
 		constantPincode: string = makeLoginPin(),
 		enableE2EE: boolean = true,
+		modelName = "System Product Name",
 	): Promise<string> {
 		if (!/^\d{6}$/.test(constantPincode)) {
 			throw new InternalError(
@@ -415,6 +437,7 @@ export class Login {
 			e2eeData,
 			cert,
 			"loginZ",
+			modelName,
 		);
 
 		if (!response.authToken) {
@@ -464,6 +487,7 @@ export class Login {
 					e2eeData,
 					cert,
 					"loginZ",
+					modelName,
 				);
 			} else {
 				const headers = {
@@ -490,6 +514,7 @@ export class Login {
 					e2eeData,
 					cert,
 					"loginZ",
+					modelName,
 				);
 			}
 		}
@@ -504,6 +529,7 @@ export class Login {
 		email: string,
 		password: string,
 		constantPincode: string = makeLoginPin(),
+		modelName = "System Product Name",
 	): Promise<string> {
 		if (!/^\d{6}$/.test(constantPincode)) {
 			throw new InternalError(
@@ -544,6 +570,7 @@ export class Login {
 			e2eeData,
 			cert,
 			"loginV2",
+			modelName,
 		);
 
 		if (!response[9]) {
@@ -593,6 +620,7 @@ export class Login {
 				e2eeData,
 				cert,
 				"loginV2",
+				modelName,
 			);
 		}
 		if (response[2]) {
@@ -660,6 +688,7 @@ export class Login {
 		secret: Buffer | undefined,
 		cert: string | undefined,
 		methodName: K,
+		modelName: string = "System Product Name",
 	): Promise<LoginVer[K]> {
 		let loginType = 2;
 		if (!secret) loginType = 0;
@@ -683,7 +712,7 @@ export class Login {
 						[11, 9, verifier],
 						[11, 10, secret],
 						[8, 11, 1],
-						[11, 12, "System Product Name"],
+						[11, 12, modelName],
 					],
 				],
 			],

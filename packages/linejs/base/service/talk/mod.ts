@@ -1,7 +1,7 @@
 import { type BaseClient, InternalError } from "../../core/mod.ts";
 import type { ProtocolKey } from "../../thrift/mod.ts";
 import type { BaseService } from "../types.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import { LINEStruct } from "../../thrift/mod.ts";
 import type { Buffer } from "node:buffer";
 import { ContentType } from "../../thrift/readwrite/struct.ts";
@@ -18,6 +18,18 @@ import {
 } from "./compact.ts";
 
 export type { CompactMessageResponse, SendCompactMessageOptions };
+
+export interface SendMessageOptions {
+	to: string;
+	text?: string;
+	contentType?: LINETypes.ContentType;
+	contentMetadata?: Record<string, string>;
+	relatedMessageId?: string;
+	messageRelationType?: "FORWARD" | "AUTO_REPLY" | "SUBORDINATE" | "REPLY";
+	location?: LINETypes.Location;
+	chunks?: string[] | Buffer[];
+	e2ee?: boolean;
+}
 
 export class TalkService implements BaseService {
 	client: BaseClient;
@@ -89,22 +101,14 @@ export class TalkService implements BaseService {
 	 * @returns A promise that resolves to the sent message.
 	 * @throws Will throw an error if the message sending fails.
 	 */
-	async sendMessage(options: {
-		to: string;
-		text?: string;
-		contentType?: LINETypes.ContentType;
-		contentMetadata?: Record<string, string>;
-		relatedMessageId?: string;
-		location?: LINETypes.Location;
-		chunks?: string[] | Buffer[];
-		e2ee?: boolean;
-	}): Promise<LINETypes.Message> {
+	async sendMessage(options: SendMessageOptions): Promise<LINETypes.Message> {
 		const {
 			to,
 			text,
 			contentType,
 			contentMetadata,
 			relatedMessageId,
+			messageRelationType,
 			location,
 			e2ee,
 			chunks,
@@ -132,6 +136,7 @@ export class TalkService implements BaseService {
 				contentType,
 				contentMetadata: _contentMetadata,
 				relatedMessageId,
+				messageRelationType,
 				e2ee,
 				chunks,
 			};
@@ -155,7 +160,7 @@ export class TalkService implements BaseService {
 				relatedMessageId,
 				...relatedMessageId
 					? {
-						messageRelationType: "REPLY",
+						messageRelationType: messageRelationType ?? "REPLY",
 						relatedMessageServiceCode: "TALK",
 					}
 					: {},

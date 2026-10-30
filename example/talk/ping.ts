@@ -2,8 +2,8 @@ import {
 	loginWithAuthToken,
 	loginWithPassword,
 	loginWithQR,
-} from "@evex/linejs";
-import { FileStorage } from "@evex/linejs/storage";
+} from "@nezumi0627/vylinejs";
+import { FileStorage } from "@nezumi0627/vylinejs/storage";
 
 const client = await loginWithPassword({
 	email: "",

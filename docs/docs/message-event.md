@@ -1,131 +1,48 @@
-# Receive Message client
+# Message events
 
-The next step is to finally receive the message.\
-The atmosphere is becoming more and more like a bot!
-
-:::warning
-Note, however, that to receive the group's message, the decrypt key
-in `FileStorage` or so on, as described in [Start 2](./start-2.md).
-:::
-
-First, let's create a bot that only receives “!ping” and returns “pong!”.
-
-## Chat
-
-To receive messages, do the following.
-
-```ts
-client.on("message", (message) => {
-    ...
-});
-```
-
-This is all that is needed to receive the message.\
-Easy, isn't it?
-
-So first, let's retrieve the messages sent.
-
-```ts
-client.on("message", (message) => {
-    const text = message.text;
-    console.log(text);
-});
-client.listen();
-```
-
-Your console should now show the message that was sent to you!
-
-```console
-Hello EdamAmex
-I love you! :D
-```
-
-Next, let's check if the message is “!ping”.
-
-```ts
-client.on("message", (message) => {
-    const text = message.text;
-
-    if (text === "!ping") {
-        ...     
-    }
-});
-```
-
-This is perfect. Next time I need to reply.
-
-To reply, you can call a method that sends a `messageId` with a
-`relatedMessageId`, but there is a more convenient way.
-
-```ts
-client.on("message", (message) => {
-    const text = message.text;
-
-    if (text === "!ping") {
-        message.reply("pong!");
-    }
-});
-```
-
-What a beautiful code! It's too easy. However, in this case, it is more
-beautiful to enclose it in an asynchronous function.
+Register listeners before starting `client.listen()`. Talk messages arrive through the `message` event after the library has parsed and attempted E2EE decryption.
 
 ```ts
 client.on("message", async (message) => {
-    const text = message.text;
+	console.log({
+		from: message.from.id,
+		chat: message.to.id,
+		text: message.text,
+		isMyMessage: message.isMyMessage,
+	});
 
-    if (text === "!ping") {
-        await message.reply("pong!");
-    }
+	if (message.text === "!ping") {
+		try {
+			await message.reply("pong");
+		} catch (error) {
+			console.error("Reply failed:", error);
+		}
+	}
 });
+
+client.listen({ talk: true, square: false });
 ```
 
-That's all!\
-There are also `send`, `reaction`, etc.\
-Let me explain all the methods in other chapters.
+The emitter does not wait for promises returned by asynchronous handlers. Catch rejected promises inside each `async` listener so a failed send does not become an unhandled rejection.
 
 ## Edited messages
 
-When a message is edited, LINE does not send it again through `message`. Listen
-to `message:edit` instead.
+Edits are emitted as `message:edit`, not as a new `message`. The event retains the original message ID; update the cached message with that ID. `isEdited` and `updatedTime` expose edit metadata when it is present in the event.
 
 ```ts
 client.on("message:edit", (message) => {
-    console.log(message.raw.id, "was edited to:", message.text);
+	console.log(message.raw.id, "edited:", message.text);
 });
 ```
 
-The edited message keeps the **id of the original message**, so you can replace
-your cached copy by id. `message.isEdited` is `true` and
-`message.updatedTime` holds the time of the edit.
+Vylinejs supports receiving edit events. This event does not provide an edit-message write method.
 
-The event fires both when someone else edits a message and when you edit one
-from another device.
+## Other events
 
-:::warning
-Only receiving edits is supported. Editing a message *from* linejs is not
-implemented.
-:::
+- `event`: raw Talk operation.
+- `call:incoming` and `call:cancel`: parsed incoming-call notifications. Listening does not answer a call.
+- `square:event` and `square:message`: inherited legacy Square events. Square is not actively supported by Vylinejs.
 
-## Square
+Pass an `AbortSignal` to `client.listen()` to stop listening when the application shuts down. Do not start a second listener while one is active.
 
-So what should we do with Square (OpenChat)? Basically the same thing.
-
-```ts
-client.on("square:message", async (message) => {
-    const text = message.text;
-
-    if (text === "!ping") {
-        await message.reply("pong!");
-    }
-});
-```
-
-With this alone you can create a basic bot.\
-There are many more features!
-
-Stay tuned for our next journey.
-
-:::tip If you encounter problems, please refer to [Question](/docs/question),
-not only here. 
-:::
+See [authentication](./auth.md) for persistent E2EE state and [feature status](./features.md) for legacy service limits.

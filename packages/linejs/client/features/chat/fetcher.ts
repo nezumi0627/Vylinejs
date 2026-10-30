@@ -1,6 +1,6 @@
 import type { Client } from "../../client.ts";
 import type { Chat } from "./mod.ts";
-import type * as line from "@evex/linejs-types";
+import type * as line from "vylinejs-types";
 import { TalkMessage } from "../message/mod.ts";
 
 export interface MessageFetcher {

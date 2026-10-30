@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { Buffer } from "node:buffer";
 import crypto from "node:crypto";
 import nacl from "tweetnacl";
@@ -230,25 +230,20 @@ Deno.test("group key — generation 0 is fetched by id like any other", async ()
 	assertEquals(cachedAt(store, `e2eeGroupKeys:${GROUP_MID}:0`), key);
 });
 
-Deno.test("group key — generation 0 falls back to the last key when unserved", async () => {
+Deno.test("group key — an unavailable generation does not substitute the last key", async () => {
 	const { e2ee, calls } = makeFixture({
 		served: [9], // generation 0 is not served
 		lastKeyId: 9,
 	});
 
-	const key = await e2ee.getE2EELocalPublicKey(GROUP_MID, 0);
+	await assertRejects(() => e2ee.getE2EELocalPublicKey(GROUP_MID, 0));
 
 	assertEquals(calls, [
 		{
 			name: "getE2EEGroupSharedKey",
 			args: { keyVersion: 2, chatMid: GROUP_MID, groupKeyId: 0 },
 		},
-		{
-			name: "getLastE2EEGroupSharedKey",
-			args: { keyVersion: 2, chatMid: GROUP_MID },
-		},
 	]);
-	assertEquals(key, { privKey: expectedPrivKey(9), keyId: 9 });
 });
 
 Deno.test("group key — a key id that is not a number never reaches the wire", async () => {
@@ -267,24 +262,19 @@ Deno.test("group key — a key id that is not a number never reaches the wire", 
 	assertEquals(key, { privKey: expectedPrivKey(9), keyId: 9 });
 });
 
-Deno.test("group key — a generation the server dropped falls back to the last key", async () => {
+Deno.test("group key — a generation the server dropped is not replaced with the last key", async () => {
 	const { e2ee, store, calls } = makeFixture({
 		served: [9], // generation 7 is no longer served
 		lastKeyId: 9,
 	});
 
-	const key = await e2ee.getE2EELocalPublicKey(GROUP_MID, 7);
+	await assertRejects(() => e2ee.getE2EELocalPublicKey(GROUP_MID, 7));
 
 	assertEquals(calls, [
 		{
 			name: "getE2EEGroupSharedKey",
 			args: { keyVersion: 2, chatMid: GROUP_MID, groupKeyId: 7 },
 		},
-		{
-			name: "getLastE2EEGroupSharedKey",
-			args: { keyVersion: 2, chatMid: GROUP_MID },
-		},
 	]);
-	assertEquals(key, { privKey: expectedPrivKey(9), keyId: 9 });
-	assertEquals(cachedAt(store, `e2eeGroupKeys:${GROUP_MID}:9`), key);
+	assertEquals(cachedAt(store, `e2eeGroupKeys:${GROUP_MID}:9`), undefined);
 });

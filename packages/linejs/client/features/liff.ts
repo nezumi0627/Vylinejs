@@ -85,7 +85,7 @@ export interface LiffClient {
 		chatMid?: string;
 		liffId?: string;
 		lang?: string;
-	}): Promise<import("@evex/linejs-types").LiffViewResponse>;
+	}): Promise<import("vylinejs-types").LiffViewResponse>;
 	issueSubView(
 		...args: Parameters<
 			import("../../base/service/liff/mod.ts").LiffService["issueSubLiffView"]
@@ -96,14 +96,23 @@ export interface LiffClient {
 	shareMessages(
 		to: string,
 		messages: LiffMessage[],
-		opts?: { liffId?: string; forceIssue?: boolean },
+		opts?: LiffSendOptions,
 	): Promise<unknown>;
 	shareMessage(
 		to: string,
 		message: LiffMessage,
-		opts?: { liffId?: string; forceIssue?: boolean },
+		opts?: LiffSendOptions,
+	): Promise<unknown>;
+	sendLiff(
+		options: { to: string; messages: LiffMessage[] } & LiffSendOptions,
 	): Promise<unknown>;
 	readonly service: import("../../base/service/liff/mod.ts").LiffService;
+}
+
+export interface LiffSendOptions {
+	liffId?: string;
+	forceIssue?: boolean;
+	tryConsent?: boolean;
 }
 
 class ClientLiff implements LiffClient {
@@ -145,19 +154,22 @@ class ClientLiff implements LiffClient {
 	async shareMessages(
 		to: string,
 		messages: LiffMessage[],
-		opts: { liffId?: string; forceIssue?: boolean } = {},
+		opts: LiffSendOptions = {},
 	) {
-		return await this.#client.base.liff.sendLiff({
-			to,
-			messages,
-			liffId: opts.liffId ?? this.#liffId,
-			forceIssue: opts.forceIssue,
+		return await this.sendLiff({ to, messages, ...opts });
+	}
+	sendLiff(
+		options: { to: string; messages: LiffMessage[] } & LiffSendOptions,
+	) {
+		return this.#client.base.liff.sendLiff({
+			...options,
+			liffId: options.liffId ?? this.#liffId,
 		});
 	}
 	shareMessage(
 		to: string,
 		message: LiffMessage,
-		opts?: { liffId?: string; forceIssue?: boolean },
+		opts?: LiffSendOptions,
 	) {
 		return this.shareMessages(to, [message], opts);
 	}

@@ -1,10 +1,6 @@
-import type {
-	ContentType,
-	Location,
-	Message,
-	MessageReactionType,
-} from "@evex/linejs-types";
+import type { Message, MessageReactionType } from "vylinejs-types";
 import type { Client } from "../../client.ts";
+import type { SendMessageOptions } from "../../../base/service/talk/mod.ts";
 
 import type {
 	ContactMeta,
@@ -22,6 +18,11 @@ export interface TalkMessageInit {
 }
 
 const hasContents = ["IMAGE", "VIDEO", "AUDIO", "FILE"];
+type TalkMessageSendOptions = Omit<SendMessageOptions, "to">;
+type TalkMessageReplyOptions = Omit<
+	SendMessageOptions,
+	"to" | "relatedMessageId"
+>;
 
 export class TalkMessage {
 	#client: Client;
@@ -39,12 +40,7 @@ export class TalkMessage {
 	 * Replys to message.
 	 */
 	async reply(
-		input: string | {
-			e2ee?: boolean;
-			text?: string;
-			contentType?: ContentType;
-			contentMetadata?: Record<string, string>;
-		},
+		input: string | TalkMessageReplyOptions,
 	): Promise<void> {
 		if (typeof input === "string") {
 			return this.reply({
@@ -60,8 +56,8 @@ export class TalkMessage {
 			to = this.isMyMessage ? this.to.id : this.from.id;
 		}
 		await this.#client.base.talk.sendMessage({
+			...input,
 			relatedMessageId: this.raw.id,
-			text: input.text,
 			to,
 			e2ee: input.e2ee || Boolean(this.raw.chunks),
 			contentMetadata: input.contentMetadata,
@@ -72,14 +68,7 @@ export class TalkMessage {
 	 * Sends to message.
 	 */
 	async send(
-		input: string | {
-			e2ee?: boolean;
-			text?: string;
-			contentType?: ContentType;
-			contentMetadata?: Record<string, string>;
-			relatedMessageId?: string;
-			location?: Location;
-		},
+		input: string | TalkMessageSendOptions,
 	): Promise<void> {
 		if (typeof input === "string") {
 			return this.reply({
@@ -95,6 +84,7 @@ export class TalkMessage {
 			to = this.isMyMessage ? this.to.id : this.from.id;
 		}
 		await this.#client.base.talk.sendMessage({
+			...input,
 			to,
 			e2ee: input.e2ee || Boolean(this.raw.chunks),
 		});

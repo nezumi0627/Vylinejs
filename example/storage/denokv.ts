@@ -1,4 +1,4 @@
-import type { BaseStorage } from "@evex/linejs/storage";
+import type { BaseStorage } from "@nezumi0627/vylinejs/storage";
 
 import { type Kv, openKv } from "npm:@deno/kv";
 

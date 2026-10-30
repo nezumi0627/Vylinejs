@@ -7,7 +7,7 @@ import {
 	Protocols,
 } from "../../thrift/mod.ts";
 import { Buffer } from "node:buffer";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import { type BaseClient, InternalError } from "../../core/mod.ts";
 import type { BaseService } from "../types.ts";
 import type { AuthTokenCredential } from "../../request/auth_token.ts";

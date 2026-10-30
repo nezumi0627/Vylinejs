@@ -1,8 +1,8 @@
 import type {
 	Square as SquareRaw,
 	SquareChat as SquareChatRaw,
-} from "@evex/linejs-types";
-import type * as LINETypes from "@evex/linejs-types";
+} from "vylinejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type { Client } from "../../mod.ts";
 import { continueRequest } from "../../../base/mod.ts";
 import type { ObjType } from "../../../base/obs/mod.ts";

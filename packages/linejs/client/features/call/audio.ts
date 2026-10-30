@@ -76,10 +76,18 @@ export function streamSource(
 ): AudioSource {
 	return {
 		async *frames(opts) {
+			if (opts?.signal?.aborted) {
+				await stream.cancel().catch(() => {});
+				return;
+			}
 			const reader = stream.getReader();
 			const onAbort = () => reader.cancel().catch(() => {});
 			opts?.signal?.addEventListener("abort", onAbort);
 			try {
+				if (opts?.signal?.aborted) {
+					await reader.cancel();
+					return;
+				}
 				while (true) {
 					const { value, done } = await reader.read();
 					if (done) return;
@@ -104,8 +112,20 @@ export function bufferSource(opts: {
 }): AudioSource {
 	const channels = opts.channels ?? 1;
 	const frameMs = opts.frameDurationMs ?? 20;
-	const frameSamples = Math.floor((opts.sampleRate * frameMs) / 1000) *
-		channels;
+	if (!Number.isFinite(opts.sampleRate) || opts.sampleRate <= 0) {
+		throw new RangeError("sampleRate must be a positive finite number");
+	}
+	if (!Number.isSafeInteger(channels) || channels <= 0) {
+		throw new RangeError("channels must be a positive integer");
+	}
+	if (!Number.isFinite(frameMs) || frameMs <= 0) {
+		throw new RangeError("frameDurationMs must be a positive finite number");
+	}
+	const samplesPerChannel = Math.floor((opts.sampleRate * frameMs) / 1000);
+	const frameSamples = samplesPerChannel * channels;
+	if (!Number.isSafeInteger(frameSamples) || frameSamples <= 0) {
+		throw new RangeError("frame geometry must produce at least one sample");
+	}
 	return {
 		async *frames(o) {
 			for (let i = 0; i < opts.samples.length; i += frameSamples) {

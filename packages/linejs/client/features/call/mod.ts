@@ -1,6 +1,11 @@
-// Call control-plane wrappers + CallSession glue.
+/**
+ * Call setup, incoming-call handling, media codecs, and packet transports.
+ * Runtime support depends on available UDP and codec facilities; browser UDP
+ * transports are not supported.
+ * @module
+ */
 import type { Client } from "../../mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type { DeviceDetails } from "../../../base/mod.ts";
 import type { CodecFactory } from "./audio.ts";
 import { defaultCodecFactory } from "./audio.ts";

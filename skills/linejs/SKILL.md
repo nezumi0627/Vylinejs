@@ -14,7 +14,7 @@ This skill is a **roadmap**, not a manual. The library moves fast; rather than f
 ```sh
 deno add jsr:@evex/linejs
 # Types are also available standalone:
-deno add jsr:@evex/linejs-types
+deno add jsr:@nezumi0627/vylinejs
 ```
 
 Latest release: check JSR — `https://jsr.io/@evex/linejs` or `curl -s https://jsr.io/@evex/linejs/meta.json | jq -r .latest`. The skill prompt does **not** pin a version; pin in user code.

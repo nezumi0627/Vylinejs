@@ -38,9 +38,9 @@ import { Timeline } from "../timeline/mod.ts";
 import { Polling } from "../polling/mod.ts";
 import { ConnManager } from "../push/mod.ts";
 
-import { Thrift as def } from "@evex/linejs-types/thrift";
+import { Thrift as def } from "vylinejs-types/thrift";
 
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type { Fetch, FetchLike } from "../types.ts";
 import type { LooseType } from "@evex/loose-types";
 

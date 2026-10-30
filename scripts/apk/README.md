@@ -1,7 +1,7 @@
 # APK → linejs Thrift sync pipeline
 
 Pull a fresh LINE Android APK and refresh `packages/types/thrift.ts` +
-`packages/types/line_types.ts` from the live bytecode. The pipeline is
+`packages/linejs/types/line_types.ts` from the live bytecode. The pipeline is
 non-destructive: anything it can't auto-resolve safely is reported (not
 applied), and re-running on a future APK should always succeed.
 

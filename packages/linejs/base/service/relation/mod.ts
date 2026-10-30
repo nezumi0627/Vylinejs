@@ -1,7 +1,7 @@
 // For Relation (find user, etc)
 
 import { LINEStruct, type ProtocolKey } from "../../thrift/mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "vylinejs-types";
 import type { BaseClient } from "../../core/mod.ts";
 import type { BaseService } from "../types.ts";
 

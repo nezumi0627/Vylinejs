@@ -112,6 +112,26 @@ Deno.test("sendMessage retries with E2EE when the server asks for it", async () 
 	assertEquals(stub.encryptedFor, ["u0"]);
 });
 
+Deno.test("sendMessage preserves the requested reply relation type", async () => {
+	const stub = makeStubClient(() => Promise.resolve({ id: "1" }));
+	await new TalkService(stub.client as never).sendMessage({
+		to: "u0",
+		text: "forwarded reply",
+		relatedMessageId: "message-1",
+		messageRelationType: "FORWARD",
+	});
+
+	const decoded = readThrift(
+		writeThrift(
+			stub.calls[0]!.value as NestedArray,
+			"sendMessage",
+			Protocols[4],
+		),
+		Protocols[4],
+	).data;
+	assertEquals(decoded[2][22], 0); // FORWARD in the thrift enum.
+});
+
 Deno.test("sendMessage rethrows a non-E2EE code without retrying", async () => {
 	const failure = new InternalError("RequestError", "not found", {
 		code: "NOT_FOUND",
