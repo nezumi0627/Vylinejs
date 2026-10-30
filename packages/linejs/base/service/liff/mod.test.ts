@@ -78,6 +78,30 @@ Deno.test("sendLiff shares an in-flight token issue for the same recipient and L
 	await Promise.all([first, second]);
 });
 
+Deno.test("sendLiff invalidates a cached token after an unauthorized response", async () => {
+	let fetchCount = 0;
+	const service = new LiffService({
+		fetch: () =>
+			Promise.resolve(
+				++fetchCount === 1
+					? new Response('{"error":"unauthorized"}', { status: 401 })
+					: new Response("{}"),
+			),
+	} as never as BaseClient);
+	let issueCount = 0;
+	service.getLiffToken = () => Promise.resolve(`token-${++issueCount}`);
+	const options = {
+		to: "u-recipient",
+		liffId: "app",
+		messages: [{ type: "text", text: "hello" } as const],
+	};
+
+	await assertRejects(() => service.sendLiff(options), Error);
+	await service.sendLiff(options);
+
+	assertEquals(issueCount, 2);
+});
+
 Deno.test("sendLiff does not reuse a token after switching LINE accounts", async () => {
 	const client = {
 		profile: { mid: "u-account-a" },

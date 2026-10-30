@@ -215,6 +215,9 @@ export class LiffService implements BaseService {
 
 		const responseBody = await response.json();
 		if (!response.ok) {
+			if (response.status === 401) {
+				delete this.liffTokenCache[cacheKey];
+			}
 			throw new InternalError(
 				this.errorName,
 				`Failed to send Liff message: ${response.statusText}`,
