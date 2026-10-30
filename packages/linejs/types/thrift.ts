@@ -1,5 +1,10 @@
+/**
+ * Runtime Thrift enum tables and helpers for decoding protocol values.
+ * @module
+ */
 import type { LooseType } from "@evex/loose-types";
 
+/** Mapping from LINE Thrift enum names and numeric values to wire labels. */
 export const Thrift: LooseType = {
 	"AR0_g": {
 		"16641": "ILLEGAL_ARGUMENT",
@@ -39302,6 +39307,7 @@ export const Thrift: LooseType = {
 		},
 	],
 };
+/** Resolve a Thrift enum's wire value to its symbolic name. */
 export function parseEnum(name: string, value: number | string): string | null {
 	return (Thrift as LooseType)[name][value] ?? null;
 }

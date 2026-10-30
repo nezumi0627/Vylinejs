@@ -1,4 +1,9 @@
-// Call control-plane wrappers + CallSession glue.
+/**
+ * Call setup, incoming-call handling, media codecs, and packet transports.
+ * Runtime support depends on available UDP and codec facilities; browser UDP
+ * transports are not supported.
+ * @module
+ */
 import type { Client } from "../../mod.ts";
 import type * as LINETypes from "vylinejs-types";
 import type { DeviceDetails } from "../../../base/mod.ts";

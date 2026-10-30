@@ -1,6 +1,6 @@
 {
 	"name": "@nezumi0627/vylinejs",
-	"version": "0.2.13",
+	"version": "0.2.14",
 	"license": "MIT",
 	"exports": {
 		".": "./client/mod.ts",
@@ -12,7 +12,10 @@
 		"./types/thrift": "./types/thrift.ts"
 	},
 	"publish": {
-		"exclude": ["**/*.test.ts"]
+		"exclude": [
+			"**/*.test.ts",
+			"**/*_test.ts"
+		]
 	},
 	"imports": {
 		"vylinejs-types": "./types/line_types.ts",
