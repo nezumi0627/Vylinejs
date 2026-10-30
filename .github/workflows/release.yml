@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           tag_version="${GITHUB_REF_NAME#vylinejs-v}"
-          package_version="$(deno eval "JSON.parse(Deno.readTextFileSync('packages/linejs/deno.json')).version")"
+          package_version="$(deno eval "console.log(JSON.parse(Deno.readTextFileSync('packages/linejs/deno.json')).version)")"
           if [[ "$package_version" != "$tag_version" ]]; then
             echo "Tag $tag_version does not match package version $package_version" >&2
             exit 1
