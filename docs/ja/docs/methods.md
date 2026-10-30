@@ -16,6 +16,34 @@ await client.base.talk.sendMessage({
 
 この例は、テキストメッセージを e2ee で暗号化してユーザーに送信します。
 
+## LIFF {#liff}
+
+`client.liff.sendLiff()` は、検証済みの LIFF メッセージを最大 5 件まで送信します。
+1 件なら `client.liff.shareMessage()`、複数件なら `client.liff.shareMessages()` も使えます。
+`liffId` でクライアントの既定値以外の LIFF アプリを選べます。
+`forceIssue` はトークンを再発行し、`tryConsent` は同意フローを制御します。
+
+```ts
+import { liff } from "@nezumi0627/vylinejs";
+
+await client.liff.sendLiff({
+	to: "u-recipient-mid",
+	messages: [
+		liff.text("こんにちは", {
+			label: "Vylinejs",
+			iconUrl: "https://example.com/avatar.png",
+		}),
+	],
+	tryConsent: true,
+});
+```
+
+テキストの `sentBy` は任意の表示用送信者情報です。
+認証済みアカウントを変更するものではありません。
+LIFF の共有には制限があり、仕様も変わる可能性があります。
+API の成功は相手への配信を保証しません。
+利用前に[機能状況と LIFF の注意](./features#liff-message-sharing)を確認してください。
+
 ## Square のメソッド {#square-methods}
 
 Square/OpenChat のメソッドは LINEJS から引き継いだもので、旧来の API として残されています。

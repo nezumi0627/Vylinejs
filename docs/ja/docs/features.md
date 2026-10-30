@@ -21,6 +21,36 @@ LINE のサーバーが非公式プロトコルを今後も受け入れること
 | LINE VOOM/Timeline | 利用不可 | VOOM は 2026-09-30 に終了しました。互換 API は非推奨で、リクエストの送信前に失敗します。代替エンドポイントは提供しません。 |
 | ブラウザーでの実行 | UDP による通話メディアは非対応 | 通話トランスポートは UDP ソケットを使用します。それ以外のブラウザーでの利用も、検証済みランタイムの対象には含まれていません。 |
 
+## LIFF によるメッセージ共有 {#liff-message-sharing}
+
+LIFF による共有は、LINE のエンドポイントを利用する非公式の連携です。
+利用可否や制限は過去に大きく変わっており、今後も LINE 側で変更される可能性があります。
+API が成功を返しても、相手への配信や継続的な利用が保証されるわけではありません。
+利用前に LINE の最新ルールを確認し、対象アカウントで動作を確かめてください。
+同意、アカウントごとの上限、メッセージ制限を回避する目的では使用しないでください。
+
+`Client` を作成してログインした後、`client.liff.sendLiff()` でメッセージを共有できます。
+テキストメッセージの `sentBy` は表示用の送信者情報を追加します。
+認証済みの LINE アカウント自体を変更する機能ではありません。
+
+```ts
+import { liff } from "@nezumi0627/vylinejs";
+
+await client.liff.sendLiff({
+	to: "u-recipient-mid",
+	messages: [
+		liff.text("LIFF で共有したメッセージ", {
+			label: "Vylinejs",
+			iconUrl: "https://example.com/avatar.png",
+		}),
+	],
+});
+```
+
+1 件だけ送る場合は、簡易 API の `client.liff.shareMessage(to, message)` も使えます。
+どちらの API も同意を求められる場合があり、LINE 側の制限やアカウントの状態によって失敗します。
+利用前に[LIFF API リファレンス](./methods#liff)を確認してください。
+
 ## ランタイム {#runtimes}
 
 ライブラリの開発とテストには Deno 2.7.14 を使用しています。

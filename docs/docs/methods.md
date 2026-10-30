@@ -17,6 +17,27 @@ await client.base.talk.sendMessage({
 This is an example of encrypting a text message with e2ee and sending it to a
 user.
 
+## LIFF {#liff}
+
+`client.liff.sendLiff()` shares up to five validated LIFF messages with a recipient. Use `client.liff.shareMessage()` for one message or `client.liff.shareMessages()` for a message list. Set `liffId` to select an app other than the client's default; `forceIssue` requests a fresh token, and `tryConsent` controls the consent flow.
+
+```ts
+import { liff } from "@nezumi0627/vylinejs";
+
+await client.liff.sendLiff({
+	to: "u-recipient-mid",
+	messages: [
+		liff.text("Hello", {
+			label: "Vylinejs",
+			iconUrl: "https://example.com/avatar.png",
+		}),
+	],
+	tryConsent: true,
+});
+```
+
+`sentBy` is optional display attribution on text messages. It does not alter the authenticated account. LIFF sharing is restricted and changeable; an API success does not guarantee delivery. Review [feature status and LIFF cautions](./features#liff-message-sharing) before depending on it.
+
 ## Square Methods
 
 Square/OpenChat methods are inherited from LINEJS and remain available as a

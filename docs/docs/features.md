@@ -19,6 +19,28 @@ Vylinejs is a protocol library, not a bundled chat application. The table descri
 | LINE VOOM/Timeline | Unavailable | VOOM ended on 2026-09-30. Compatibility APIs are deprecated and fail before making a request. No replacement endpoint is provided. |
 | Browser runtime | Unsupported for UDP call media | The call transport uses UDP sockets. Other browser use is not part of the verified runtime matrix. |
 
+## LIFF message sharing {#liff-message-sharing}
+
+LIFF sharing is an unofficial integration with LINE endpoints. Its availability and restrictions have changed substantially over time, and LINE may change them again. A successful API response does not guarantee delivery or continued access. Check current LINE rules and test with the target account before relying on this feature. Do not use it to bypass consent, account limits, or messaging restrictions.
+
+After creating and logging in a `Client`, use `client.liff.sendLiff()` to share one or more messages. The `sentBy` field adds display attribution to a text message; it does not change the authenticated LINE account that sends it.
+
+```ts
+import { liff } from "@nezumi0627/vylinejs";
+
+await client.liff.sendLiff({
+	to: "u-recipient-mid",
+	messages: [
+		liff.text("Shared through LIFF", {
+			label: "Vylinejs",
+			iconUrl: "https://example.com/avatar.png",
+		}),
+	],
+});
+```
+
+Use `client.liff.shareMessage(to, message)` when sending a single message with the convenience API. Both methods may require consent and can fail when LINE restricts the endpoint or the account. See the [LIFF API reference](./methods#liff).
+
 ## Runtimes
 
 The library is developed and tested with Deno 2.7.14. Node.js 24 is used for the transport compatibility check. JSR provides an npm-compatible package for Node.js, npm, and Bun workflows, but the project does not run a full test matrix on every runtime and version. The documentation site uses Node.js and npm. Browser UDP is not available for call transport.
