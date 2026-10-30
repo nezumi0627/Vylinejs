@@ -414,7 +414,7 @@ Deno.test("streamSource handles a signal aborted before iteration", async () => 
 			throw new Error("aborted stream yielded a frame");
 		}
 	})();
-	let timeoutId: number | undefined;
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
 	try {
 		await Promise.race([
 			reading,
