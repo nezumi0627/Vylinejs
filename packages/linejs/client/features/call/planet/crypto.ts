@@ -117,8 +117,12 @@ export interface EphemeralKeypair {
 export function generateEphemeralKeypair(): EphemeralKeypair {
 	const ec = createECDH("prime256v1");
 	ec.generateKeys();
+	// OpenSSL omits leading zero bytes from P-256 private scalars.
+	const rawPrivateKey = ec.getPrivateKey();
+	const privateKey = new Uint8Array(32);
+	privateKey.set(rawPrivateKey, 32 - rawPrivateKey.length);
 	return {
-		privateKey: new Uint8Array(ec.getPrivateKey()),
+		privateKey,
 		publicKey: new Uint8Array(ec.getPublicKey(undefined, "compressed")),
 	};
 }
